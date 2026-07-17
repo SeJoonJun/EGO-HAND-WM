@@ -1,0 +1,59 @@
+seed: 42
+
+runtime:
+  device: auto
+
+data:
+  kind: vitra_shards
+  shard_glob: /n/netscratch/ydu_lab/Lab/sjmathy/VITRA_SHARDS/*.tar
+  pts_root: /n/netscratch/ydu_lab/Lab/sjmathy/VITRA_PTS
+  fallback_fps: null
+  history_steps: 6
+  future_steps: 12
+  left_mano_policy: mask
+  shuffle_buffer: 256
+  # These guards deliberately stop this target configuration until the RGB/DINO
+  # feature shards have passed their alignment gate.
+  require_context_visual: true
+  require_future_visual: false
+
+model:
+  hidden_dim: 1024
+  heads: 16
+  context_depth: 6
+  depth: 12
+  mlp_ratio: 4.0
+  dropout: 0.0
+  physical_max_period: 10.0
+  future_visual_latent_dim: 0
+  use_fingertips: false
+  vision:
+    kind: precomputed
+    precomputed_dim: 1024
+  text:
+    kind: hf
+    model_name: google-t5/t5-base
+    max_tokens: 32
+
+loss:
+  rotation_weight: 0.1
+  ego_weight: 0.2
+  visual_weight: 0.0
+
+training:
+  output_dir: /n/netscratch/ydu_lab/Lab/sjmathy/EGO-HAND-WM/runs/vitra-pretrain-v1
+  batch_size: 8
+  num_workers: 8
+  drop_last: true
+  max_steps: 200000
+  warmup_steps: 5000
+  learning_rate: 0.0001
+  weight_decay: 0.05
+  gradient_accumulation_steps: 8
+  grad_clip: 1.0
+  bf16: true
+  find_unused_parameters: true
+  overwrite: false
+  log_every: 10
+  save_every: 5000
+  resume: null

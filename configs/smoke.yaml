@@ -1,0 +1,51 @@
+seed: 42
+
+runtime:
+  device: cpu
+
+data:
+  kind: synthetic
+  length: 16
+  history_steps: 3
+  future_steps: 4
+  horizon_seconds: 1.0
+  image_size: 32
+  seed: 17
+
+model:
+  hidden_dim: 64
+  heads: 4
+  context_depth: 1
+  depth: 2
+  mlp_ratio: 2.0
+  dropout: 0.0
+  physical_max_period: 10.0
+  future_visual_latent_dim: 0
+  vision:
+    kind: tiny
+  text:
+    kind: hash
+    max_tokens: 12
+
+loss:
+  rotation_weight: 0.02
+  ego_weight: 0.02
+  visual_weight: 0.0
+
+training:
+  output_dir: /tmp/ego-hand-wm-smoke
+  batch_size: 2
+  num_workers: 0
+  drop_last: true
+  max_steps: 2
+  warmup_steps: 1
+  learning_rate: 0.001
+  weight_decay: 0.0001
+  gradient_accumulation_steps: 1
+  grad_clip: 1.0
+  bf16: false
+  find_unused_parameters: true
+  overwrite: false
+  log_every: 1
+  save_every: 0
+  resume: null

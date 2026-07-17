@@ -1,0 +1,24 @@
+# This directory contains independent upstream reference repositories.
+/Being-H0/
+/EgoVLA_Release/
+/Ego_Humanoid_Manipulation_Benchmark/
+/Flow-World-Models/
+/MMTwin/
+/USST/
+/UniHand/
+/VITRA/
+/dinov3/
+
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.venv/
+outputs/
+checkpoints/
+logs/
+wandb/
+*.pt
+*.pth
+*.ckpt

@@ -1,0 +1,52 @@
+seed: 42
+
+runtime:
+  device: cpu
+
+data:
+  kind: vitra_directory
+  annotation_glob: /n/netscratch/ydu_lab/Lab/sjmathy/VITRA_RAW/samples/episodes/ego4d_cooking_and_cleaning/episodic_annotations/*.npy
+  dataset_name: ego4d_cooking_and_cleaning
+  pts_root: null
+  fallback_fps: 30.0
+  history_steps: 3
+  future_steps: 8
+  left_mano_policy: mask
+
+model:
+  hidden_dim: 128
+  heads: 4
+  context_depth: 2
+  depth: 4
+  mlp_ratio: 4.0
+  dropout: 0.0
+  physical_max_period: 10.0
+  future_visual_latent_dim: 0
+  vision:
+    kind: tiny
+  text:
+    kind: hash
+    max_tokens: 24
+
+loss:
+  rotation_weight: 0.1
+  ego_weight: 0.2
+  visual_weight: 0.0
+
+training:
+  output_dir: /tmp/ego-hand-wm-vitra-geometry-gate
+  batch_size: 2
+  num_workers: 0
+  drop_last: true
+  max_steps: 20
+  warmup_steps: 2
+  learning_rate: 0.0003
+  weight_decay: 0.01
+  gradient_accumulation_steps: 1
+  grad_clip: 1.0
+  bf16: false
+  find_unused_parameters: true
+  overwrite: false
+  log_every: 1
+  save_every: 10
+  resume: null
