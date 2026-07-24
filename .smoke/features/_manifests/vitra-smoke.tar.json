@@ -1,0 +1,56 @@
+{
+  "annotation_shard": {
+    "mtime_ns": 1784331916908329260,
+    "name": "vitra-smoke.tar",
+    "path": "/home/jun.se/EGO-HAND-WM/.smoke/vitra_episode/vitra-smoke.tar",
+    "sha256": "aa5157554f210642a400b4c6bf3645f47bc849dc4400da8d8938d3e5fa471828",
+    "size_bytes": 112640
+  },
+  "complete": true,
+  "contract": "ego_hand_wm.vitra_spatial_visual_features",
+  "episode_count": 1,
+  "extractor": {
+    "backend": "dinov3_local_backbone",
+    "input_color": "rgb",
+    "input_range": "uint8_0_255",
+    "input_size": 256,
+    "mean": [
+      0.485,
+      0.456,
+      0.406
+    ],
+    "model_name": "dinov3_vitl16",
+    "pooling": "adaptive_average_spatial_grid",
+    "repo_hubconf_sha256": "b36bf0b0502127fb938b6f3424c6e20b48206ee361422aae777e87e20006ba24",
+    "repo_path": "/home/jun.se/EGO-HAND-WM-REF/dinov3",
+    "resize": "bilinear_square_antialias",
+    "spatial_grid_size": 4,
+    "spatial_tokens": 16,
+    "std": [
+      0.229,
+      0.224,
+      0.225
+    ],
+    "storage_dtype": "float16",
+    "weights_path": "/projects/torresani-lab/sejoon/checkpoints/dinov3/dinov3_vitl16_pretrain_lvd1689m-8aa4cbdd.pth",
+    "weights_sha256": "8aa4cbddda325040fc78db2c272754af6ebe8ff2c55f6ec4f1964d8890f66035",
+    "weights_size_bytes": 1213050671
+  },
+  "extractor_id": "3cdb55739b9ae46517c1fd7c4dbc039b3329f7051d9397a56d5649cd04299140",
+  "feature_dim": 1024,
+  "feature_shard": "/home/jun.se/EGO-HAND-WM/.smoke/features/shards/vitra-smoke.tar",
+  "feature_size_bytes": 798720,
+  "finished_at_utc": "2026-07-17T23:51:55.482700+00:00",
+  "logical_content_sha256": "0128f981dc518f61902b01603aa43f1afd82e0d89844de63a2862b551d4f18c6",
+  "role_capabilities": [
+    "context",
+    "future_target"
+  ],
+  "schema_version": 2,
+  "source_video_count": 1,
+  "spatial_tokens": 16,
+  "started_at_utc": "2026-07-17T23:51:52.155648+00:00",
+  "status": "rebuilt",
+  "storage_dtype": "float16",
+  "unique_decoded_frames": 24
+}

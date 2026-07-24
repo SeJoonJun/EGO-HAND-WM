@@ -1,0 +1,40 @@
+{
+  "benchmark": "controlled_hot3d_clips_aria_h6_k16",
+  "counters": {
+    "test:clips": 237,
+    "test:left_windows": 2133,
+    "test:right_windows": 2133,
+    "train:clips": 1059,
+    "train:left_windows": 9531,
+    "train:right_windows": 9531,
+    "validation:clips": 220,
+    "validation:left_windows": 1980,
+    "validation:right_windows": 1980
+  },
+  "missing_tar_count": 0,
+  "official_public_source_split": "train",
+  "official_test_labels_used": false,
+  "participant_splits": {
+    "test": [
+      "P0012"
+    ],
+    "train": [
+      "P0001",
+      "P0002",
+      "P0003",
+      "P0009",
+      "P0010",
+      "P0014",
+      "P0015"
+    ],
+    "validation": [
+      "P0011"
+    ]
+  },
+  "records": {
+    "test": 4266,
+    "train": 19062,
+    "validation": 3960
+  },
+  "strict_complete_22_frame_hand_tracks": true
+}

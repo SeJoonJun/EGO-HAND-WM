@@ -1,0 +1,29 @@
+{
+  "complete": true,
+  "dataset": "ego4d_cooking_and_cleaning",
+  "dtype": "uint8",
+  "frame_ids_sha256": "c6edfc25cbe7fc55e41ceb5d5611692afaec5e4c1cc8b78a382029e628713017",
+  "frames": 24,
+  "request_index": {
+    "mtime_ns": 1784335997353018197,
+    "path": "/home/jun.se/EGO-HAND-WM/.smoke/rgb-requests.sqlite",
+    "size_bytes": 24576
+  },
+  "resize": "ffmpeg_swscale_to_rgb24",
+  "rgb_size_bytes": 4718720,
+  "shape": [
+    24,
+    256,
+    256,
+    3
+  ],
+  "source_fingerprint": {
+    "mtime_ns": 1784020675391753319,
+    "relative_path": "46af7819-8dfd-4c3c-9b21-5ad0d9095580.mp4",
+    "sampled_sha256": "77faec9ff2e493a0762f9cd7e92ff46a2238c3d2af4f5b3b32e5464b90654a3d",
+    "size_bytes": 116388157
+  },
+  "source_video": "/projects/torresani-lab/sejoon/datasets/VITRA/videos/ego4d_undistorted/46af7819-8dfd-4c3c-9b21-5ad0d9095580.mp4",
+  "status": "rebuilt",
+  "video": "46af7819-8dfd-4c3c-9b21-5ad0d9095580"
+}

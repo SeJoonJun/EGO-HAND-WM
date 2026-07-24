@@ -1,0 +1,45 @@
+seed: 42
+
+runtime:
+  device: auto
+
+data:
+  annotations_root: /projects/torresani-lab/sejoon/datasets/Assembly101/action_anticipation/official_annotations/data/CSVs
+  evaluation_root: /projects/torresani-lab/sejoon/datasets/Assembly101/action_anticipation/official_annotations/data
+  feature_root: /projects/torresani-lab/sejoon/datasets/Assembly101/derived/e4_anticipation/vjepa2_vitg16_384
+  geometry_root: /projects/torresani-lab/sejoon/datasets/Assembly101/derived/e4_anticipation/geometry_oracle_8hz
+  confidence_threshold: 0.25
+  # camera_anchor reproduces the completed runs. last_observed_wrist makes each wrist root a
+  # cumulative SE(3) trajectory relative to that hand at the legal t=0 observation cutoff.
+  wrist_reference: camera_anchor
+  cache_size: 8
+  require_all_caches: true
+
+model:
+  visual_dim: 1664
+  hidden_dim: 512
+  heads: 8
+  visual_depth: 2
+  geometry_depth: 2
+  mode: rgb
+  action_classes: 1064
+  verb_classes: 17
+  object_classes: 90
+  dropout: 0.1
+
+training:
+  output_dir: /projects/torresani-lab/sejoon/runs/assembly101_e4_oracle/rgb
+  batch_size: 32
+  num_workers: 8
+  drop_last: true
+  epochs: 20
+  validation_interval: 2
+  learning_rate: 0.0001
+  weight_decay: 0.05
+  schedule_epoch: 12
+  schedule_gamma: 0.1
+  focal_gamma: 2.0
+  grad_clip: 5.0
+  bf16: true
+  max_train_batches: null
+  max_eval_batches: null

@@ -5,7 +5,7 @@ runtime:
 
 data:
   kind: vitra_directory
-  annotation_glob: /n/netscratch/ydu_lab/Lab/sjmathy/VITRA_RAW/samples/episodes/ego4d_cooking_and_cleaning/episodic_annotations/*.npy
+  annotation_glob: /scratch/jun.se/VITRA-1M/ego4d_cooking_and_cleaning/episodic_annotations/*.npy
   dataset_name: ego4d_cooking_and_cleaning
   pts_root: null
   fallback_fps: 30.0

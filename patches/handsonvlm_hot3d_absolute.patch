@@ -1,0 +1,179 @@
+diff --git a/base/handsonvlm/dataset/h6k16_dataset.py b/mod/handsonvlm/dataset/h6k16_dataset.py
+index f9b0e21..cffc876 100644
+--- a/base/handsonvlm/dataset/h6k16_dataset.py
++++ b/mod/handsonvlm/dataset/h6k16_dataset.py
+@@ -4,7 +4,9 @@ from __future__ import annotations
+ 
+ import copy
+ import json
++import os
+ import pickle
++import sys
+ from functools import lru_cache
+ from pathlib import Path
+ 
+@@ -16,6 +18,15 @@ from handsonvlm.constants import DEFAULT_IMAGE_TOKEN
+ from handsonvlm.dataset.epic_dataset import preprocess_multimodal
+ from lita.dataset.base_dataset import preprocess
+ 
++EGO_HAND_WM_SRC = Path(
++    os.environ.get("EGO_HAND_WM_SRC", "/home/jun.se/EGO-HAND-WM/src")
++)
++if str(EGO_HAND_WM_SRC) not in sys.path:
++    sys.path.insert(0, str(EGO_HAND_WM_SRC))
++
++from ego_hand_wm.contracts.schema import SCHEMA
++from ego_hand_wm.data.adapters.hot3d_clips import canonicalize_hot3d_clip_window
++
+ 
+ # Train-split-only statistics over all 22 metric XYZ points in every canonical
+ # H6/K16 training window.  H2O and EgoPAT3D are trained as separate models, so
+@@ -31,6 +42,10 @@ XYZ_STANDARDIZATION = {
+         "mean": (0.05346672676161815, 0.027852819429217177, 0.5240550765701054),
+         "std": (0.226114115001128, 0.14114623875771393, 0.5184080081151089),
+     },
++    "hot3d_clips_aria": {
++        "mean": (0.2704353097511446, -0.06219469197952073, 0.3184789241289701),
++        "std": (0.11184064967022754, 0.1866135967844919, 0.10673271771077786),
++    },
+ }
+ 
+ 
+@@ -72,7 +87,48 @@ def _point(transform, xyz):
+     return (transform @ np.concatenate((xyz, np.ones(1))))[:3]
+ 
+ 
++def _hot3d_sample(record, *, decode_rgb):
++    sample = canonicalize_hot3d_clip_window(
++        record["tar_path"],
++        record["history_indices"],
++        record["future_indices"],
++        record["history_time_seconds"],
++        record["future_time_seconds"],
++        tracked_hand=record["tracked_hand"],
++        camera_stream=str(record.get("camera_stream", "214-1")),
++        anchor="last_observed",
++        wrist_target="xyz",
++        decode_rgb=decode_rgb,
++        image_size=None,
++        rotate_clockwise=True,
++    )
++    state = torch.cat((sample["history_state"], sample["future_state"]), dim=0)
++    wrist_slice = (
++        SCHEMA.left_wrist
++        if record["tracked_hand"] == "left"
++        else SCHEMA.right_wrist
++    )
++    trajectory = (
++        state[:, wrist_slice.start : wrist_slice.start + 3].cpu().numpy()
++    ).astype(np.float32)
++    frames = None
++    if decode_rgb:
++        frames = [
++            frame.mul(255.0)
++            .round()
++            .clamp(0, 255)
++            .to(torch.uint8)
++            .permute(1, 2, 0)
++            .cpu()
++            .numpy()
++            for frame in sample["context_images"]
++        ]
++    return trajectory, frames
++
++
+ def _trajectory_anchor(record):
++    if record["dataset"] == "hot3d_clips_aria":
++        return _hot3d_sample(record, decode_rgb=False)[0]
+     if record["dataset"] == "h2o":
+         payload = _read_pickle(record["trajectory_path"])
+         segment = payload[f"{record['hand']}_hand"][record["trajectory_segment_index"]]
+@@ -150,8 +206,8 @@ class H6K16ConversationDataset(Dataset):
+         datasets = {record["dataset"] for record in self.records}
+         if len(datasets) != 1:
+             raise ValueError(
+-                "Paper H6/K16 runs must train H2O and EgoPAT3D separately; "
+-                f"manifest contains {sorted(datasets)}"
++                "Paper H6/K16 runs must train one dataset at a time; manifest "
++                f"contains {sorted(datasets)}"
+             )
+         self.dataset_name = next(iter(datasets))
+         self.xyz_mean, self.xyz_std = xyz_statistics(self.dataset_name)
+@@ -165,13 +221,16 @@ class H6K16ConversationDataset(Dataset):
+         record = self.records[index]
+         if record.get("protocol") != "h6_k16_30hz":
+             raise ValueError(record.get("sample_id"))
+-        trajectory_metric = _trajectory_anchor(record)
++        if record["dataset"] == "hot3d_clips_aria":
++            trajectory_metric, frames = _hot3d_sample(record, decode_rgb=True)
++        else:
++            trajectory_metric = _trajectory_anchor(record)
++            frames = _decode_frames(record["video_path"], record["history_indices"])
+         trajectory_model = (
+             standardize_xyz(trajectory_metric, record["dataset"])
+             if self.normalize_xyz
+             else trajectory_metric
+         )
+-        frames = _decode_frames(record["video_path"], record["history_indices"])
+         image = self.image_processor.preprocess(frames, return_tensors="pt")["pixel_values"]
+         if image.shape != torch.Size([6, 3, 224, 224]):
+             raise ValueError(f"Unexpected image tensor: {image.shape}")
+diff --git a/base/scripts/finetune_h6k16.sh b/mod/scripts/finetune_h6k16.sh
+index 33449b3..7851191 100644
+--- a/base/scripts/finetune_h6k16.sh
++++ b/mod/scripts/finetune_h6k16.sh
+@@ -3,7 +3,7 @@
+ set -euo pipefail
+ 
+ : "${MODEL_PATH:?Set MODEL_PATH to the released HandsOnVLM-7B checkpoint}"
+-: "${MANIFEST:?Set MANIFEST to one H2O/EgoPAT3D H6/K16 training manifest}"
++: "${MANIFEST:?Set MANIFEST to one H6/K16 training manifest}"
+ : "${VAL_MANIFEST:?Set VAL_MANIFEST to the matching complete validation manifest}"
+ OUTPUT_DIR=${OUTPUT_DIR:-./checkpoints/handsonvlm-h6k16}
+ VISION_TOWER=${VISION_TOWER:-openai/clip-vit-large-patch14}
+diff --git a/base/tests/test_h6k16_paper_protocol.py b/mod/tests/test_h6k16_paper_protocol.py
+index 46e7995..087fdd5 100644
+--- a/base/tests/test_h6k16_paper_protocol.py
++++ b/mod/tests/test_h6k16_paper_protocol.py
+@@ -17,7 +17,7 @@ def test_train_only_xyz_standardization_is_reversible():
+         [[-0.4, 0.2, 0.1], [0.0, -0.7, 2.5], [1.2, 0.3, -0.2]],
+         dtype=np.float32,
+     )
+-    for dataset in ("h2o", "egopat3d"):
++    for dataset in ("h2o", "egopat3d", "hot3d_clips_aria"):
+         model_xyz = _MODULE.standardize_xyz(xyz, dataset)
+         recovered = _MODULE.metric_xyz(model_xyz, dataset)
+         np.testing.assert_allclose(recovered, xyz, rtol=1e-6, atol=1e-6)
+@@ -39,6 +39,23 @@ def test_real_manifest_geometry_round_trip_matches_metric_target():
+         np.testing.assert_allclose(recovered, metric, rtol=1e-6, atol=1e-6)
+ 
+ 
++def test_real_hot3d_manifest_geometry_round_trip_matches_metric_target():
++    manifest = Path(
++        "/home/jun.se/EGO-HAND-WM/data/hot3d_clips_h6_k16/"
++        "hot3d_clips_aria_train_h6_k16.jsonl"
++    )
++    if not manifest.exists():
++        return
++    record = json.loads(manifest.open().readline())
++    metric = _MODULE._trajectory_anchor(record)
++    assert metric.shape == (22, 3)
++    recovered = _MODULE.metric_xyz(
++        _MODULE.standardize_xyz(metric, "hot3d_clips_aria"),
++        "hot3d_clips_aria",
++    )
++    np.testing.assert_allclose(recovered, metric, rtol=1e-6, atol=1e-6)
++
++
+ def test_manifest_datasets_cannot_be_mixed(tmp_path):
+     records = [
+         {"dataset": "h2o", "protocol": "h6_k16_30hz"},
+@@ -53,7 +70,7 @@ def test_manifest_datasets_cannot_be_mixed(tmp_path):
+     try:
+         _MODULE.H6K16ConversationDataset(manifest, None, DataArgs())
+     except ValueError as error:
+-        assert "must train H2O and EgoPAT3D separately" in str(error)
++        assert "must train one dataset at a time" in str(error)
+     else:
+         raise AssertionError("mixed-dataset manifest was accepted")
+ 

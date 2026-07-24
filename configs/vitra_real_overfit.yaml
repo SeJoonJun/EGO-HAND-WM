@@ -1,0 +1,64 @@
+seed: 42
+
+runtime:
+  device: auto
+
+data:
+  kind: vitra_shards
+  shard_glob: /home/jun.se/EGO-HAND-WM/.smoke/vitra_episode/vitra-smoke.tar
+  pts_root: /scratch/jun.se/EGO-HAND-WM/VITRA_PTS
+  feature_root: /home/jun.se/EGO-HAND-WM/.smoke/features
+  fallback_fps: null
+  sampling:
+    kind: native_variable
+    history_steps: 6
+    target_counts: [4, 8, 12, 16]
+    rare_target_count: null
+    rare_target_probability: 0.0
+    consecutive_probability: 0.70
+  left_mano_policy: as_stored
+  attach_future_visual: false
+  shuffle_buffer: 0
+  require_context_visual: true
+  require_future_visual: false
+
+model:
+  hidden_dim: 1024
+  heads: 16
+  context_depth: 6
+  depth: 12
+  mlp_ratio: 4.0
+  dropout: 0.0
+  physical_max_period: 10.0
+  future_visual_latent_dim: 0
+  use_fingertips: false
+  vision:
+    kind: precomputed
+    precomputed_dim: 1024
+    spatial_tokens: 16
+  text:
+    kind: hash
+    max_tokens: 32
+
+loss:
+  rotation_weight: 0.1
+  ego_weight: 0.2
+  visual_weight: 0.0
+
+training:
+  output_dir: /scratch/jun.se/EGO-HAND-WM/runs/vitra-real-overfit-v2
+  batch_size: 1
+  num_workers: 0
+  drop_last: false
+  max_steps: 200
+  warmup_steps: 10
+  learning_rate: 0.0001
+  weight_decay: 0.01
+  gradient_accumulation_steps: 1
+  grad_clip: 1.0
+  bf16: true
+  find_unused_parameters: true
+  overwrite: false
+  log_every: 1
+  save_every: 50
+  resume: null

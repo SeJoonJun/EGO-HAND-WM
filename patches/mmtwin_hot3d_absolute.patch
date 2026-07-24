@@ -1,0 +1,127 @@
+diff --git a/base/tests/test_h6k16_adapter.py b/mod/tests/test_h6k16_adapter.py
+index 6601e7e..c73d6f2 100644
+--- a/base/tests/test_h6k16_adapter.py
++++ b/mod/tests/test_h6k16_adapter.py
+@@ -2,6 +2,7 @@ from __future__ import annotations
+ 
+ import json
+ import pickle
++from pathlib import Path
+ 
+ import numpy as np
+ import pytest
+@@ -80,6 +81,9 @@ def test_twin_diffusion_smoke_forward_backward_and_sample():
+         hand_layers=1,
+         egomotion_layers=1,
+         vision_model="tiny_cnn",
++        coordinate_contract="anchor_xyz_train_standardized_absolute_v3",
++        residual_to_last_observation=False,
++        zero_initialize_residual=False,
+     )
+     model = EgoMANStyleMMTwin(config)
+     camera = torch.zeros(1, 22, 12)
+@@ -172,3 +176,36 @@ def test_zero_initialized_decoder_is_persistence_before_training():
+     torch.testing.assert_close(
+         prediction, standardized[:, 5:6].expand(-1, 16, -1)
+     )
++
++
++def test_absolute_decoder_has_no_persistence_shortcut():
++    config = AdaptedMMTwinConfig(
++        latent_dim=32,
++        diffusion_steps=10,
++        timestep_respacing="2",
++        validation_timestep_respacing="2",
++        hand_layers=1,
++        egomotion_layers=1,
++        vision_model="tiny_cnn",
++        coordinate_contract="anchor_xyz_train_standardized_absolute_v3",
++        residual_to_last_observation=False,
++        zero_initialize_residual=False,
++    )
++    model = EgoMANStyleMMTwin(config)
++    final_layer = model.trajectory_decoder.feat_embed[-1]
++    assert torch.count_nonzero(final_layer.weight).item() > 0
++    assert model.config.residual_to_last_observation is False
++
++
++def test_real_hot3d_manifest_decodes_metric_xyz_and_rgb():
++    manifest = Path(
++        "/home/jun.se/EGO-HAND-WM/data/hot3d_clips_h6_k16/"
++        "hot3d_clips_aria_train_h6_k16.jsonl"
++    )
++    if not manifest.exists():
++        return
++    sample = H6K16ManifestDataset(manifest, decode_rgb=True)[0]
++    assert tuple(sample["context_images"].shape[:2]) == (6, 3)
++    assert tuple(sample["history_xyz_anchor"].shape) == (6, 3)
++    assert tuple(sample["future_xyz_anchor"].shape) == (16, 3)
++    assert bool(sample["projective_metric_valid"]) is False
+diff --git a/base/traineval_h6k16.py b/mod/traineval_h6k16.py
+index 7770372..c52bc37 100644
+--- a/base/traineval_h6k16.py
++++ b/mod/traineval_h6k16.py
+@@ -51,6 +51,15 @@ def parse_args() -> argparse.Namespace:
+         help="Linear warmup fraction before cosine decay; native MMTwin uses 0.",
+     )
+     parser.add_argument("--latent-dim", type=int, default=1024)
++    parser.add_argument(
++        "--output-parameterization",
++        choices=("absolute", "residual"),
++        default="absolute",
++        help=(
++            "Predict absolute standardized anchor-camera XYZ by default. "
++            "Residual is retained only as an explicitly named diagnostic."
++        ),
++    )
+     parser.add_argument("--diffusion-steps", type=int, default=1000)
+     parser.add_argument(
+         "--timestep-respacing",
+@@ -399,6 +408,12 @@ def main() -> None:
+         checkpoint = torch.load(args.resume, map_location="cpu", weights_only=False)
+ 
+     if checkpoint is None:
++        residual_output = args.output_parameterization == "residual"
++        coordinate_contract = (
++            "anchor_xyz_train_standardized_residual_v2"
++            if residual_output
++            else "anchor_xyz_train_standardized_absolute_v3"
++        )
+         config = AdaptedMMTwinConfig(
+             latent_dim=args.latent_dim,
+             diffusion_steps=args.diffusion_steps,
+@@ -407,15 +422,20 @@ def main() -> None:
+             vision_model=args.vision_model,
+             vision_repo=str(args.vision_repo) if args.vision_repo else None,
+             vision_checkpoint=str(args.vision_checkpoint) if args.vision_checkpoint else None,
++            coordinate_contract=coordinate_contract,
++            residual_to_last_observation=residual_output,
++            zero_initialize_residual=residual_output,
+         )
+     else:
+         # A resume must reconstruct the architecture/training diffusion from
+         # checkpoint metadata rather than silently accepting incompatible CLI
+         # defaults.  Vision paths may be relocated between clusters.
+         saved_config = dict(checkpoint["config"])
+-        if saved_config.get("coordinate_contract") != (
+-            "anchor_xyz_train_standardized_residual_v2"
+-        ):
++        supported_contracts = {
++            "anchor_xyz_train_standardized_residual_v2",
++            "anchor_xyz_train_standardized_absolute_v3",
++        }
++        if saved_config.get("coordinate_contract") not in supported_contracts:
+             raise ValueError(
+                 "This checkpoint predates the lossless metric-XYZ target contract "
+                 "and cannot be resumed or evaluated as a paper run. Retrain from scratch."
+@@ -545,6 +565,10 @@ def main() -> None:
+         (args.output_dir / "config.json").write_text(
+             json.dumps({"model": asdict(config), "command": vars(args)}, default=str, indent=2)
+         )
++        print(
++            "output_parameterization="
++            + ("residual" if config.residual_to_last_observation else "absolute")
++        )
+         print(f"train={len(train_loader.dataset)} val={len(val_loader.dataset)} world={world_size}")
+         print(f"trainable_parameters={sum(p.numel() for p in trainable):,}")
+ 

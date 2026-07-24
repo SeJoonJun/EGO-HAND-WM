@@ -1,0 +1,81 @@
+{
+  "geometry": {
+    "bytes": 1931101476,
+    "cache_files": 254,
+    "invalid_released_frames": 3,
+    "maximum_anchor_identity_error": 4.88013313315605e-07,
+    "segments_with_anchor_unavailable": 242,
+    "segments_with_truncated_window": 247
+  },
+  "splits": {
+    "train": {
+      "e4_serial_counts": {
+        "HMC_21179183_mono10bit": 20706,
+        "HMC_84358933_mono10bit": 19463
+      },
+      "geometry_coverage": {
+        "segments_with_anchor_beyond_pose_stream": 33,
+        "segments_with_any_window_truncation": 36,
+        "segments_with_full_geometry_window": 38353,
+        "segments_without_released_pose": 1780
+      },
+      "label_ranges": {
+        "action": [
+          0,
+          1063
+        ],
+        "object": [
+          0,
+          89
+        ],
+        "verb": [
+          0,
+          16
+        ]
+      },
+      "recordings": 207,
+      "segments": 40169
+    },
+    "validation": {
+      "e4_serial_counts": {
+        "HMC_21179183_mono10bit": 7817,
+        "HMC_84358933_mono10bit": 5323
+      },
+      "geometry_coverage": {
+        "segments_with_anchor_beyond_pose_stream": 209,
+        "segments_with_any_window_truncation": 211,
+        "segments_with_full_geometry_window": 12374,
+        "segments_without_released_pose": 555
+      },
+      "label_ranges": {
+        "action": [
+          0,
+          1061
+        ],
+        "object": [
+          0,
+          88
+        ],
+        "verb": [
+          0,
+          16
+        ]
+      },
+      "recordings": 61,
+      "segments": 13140
+    }
+  },
+  "status": "complete",
+  "totals": {
+    "pose_available_recordings": 254,
+    "pose_missing_recordings": 14,
+    "recordings": 268,
+    "segments": 53309
+  },
+  "vjepa": {
+    "bytes": 45424385664,
+    "cache_files": 53309,
+    "expected_files": 53309,
+    "missing_files": 0
+  }
+}

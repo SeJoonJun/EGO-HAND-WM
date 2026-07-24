@@ -1,0 +1,35 @@
+{
+  "protocol": {
+    "history_steps": 6,
+    "future_steps": 16,
+    "fps": 30.0,
+    "history_span_seconds": 0.16666666666666666,
+    "final_horizon_seconds": 0.5333333333333333,
+    "stride": 16
+  },
+  "h2o": {
+    "test": 3832,
+    "train": 8604,
+    "val": 1830
+  },
+  "egopat3d": {
+    "test_novel": 4686,
+    "test_seen": 3353,
+    "train": 14280,
+    "val": 1735
+  },
+  "audit": {
+    "test:eligible_segments": 98,
+    "test_novel:eligible_clips": 1994,
+    "test_novel:short_clips": 340,
+    "test_seen:eligible_clips": 1382,
+    "test_seen:short_clips": 223,
+    "train:eligible_clips": 5782,
+    "train:eligible_segments": 255,
+    "train:short_clips": 574,
+    "val:eligible_clips": 730,
+    "val:eligible_segments": 58,
+    "val:short_clips": 116,
+    "val:short_segments": 2
+  }
+}

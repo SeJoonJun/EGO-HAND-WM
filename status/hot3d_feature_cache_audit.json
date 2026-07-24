@@ -1,0 +1,88 @@
+{
+  "caches": {
+    "test/history": {
+      "checked_indices": [
+        0,
+        2133,
+        4265
+      ],
+      "dtype": "float16",
+      "extractor_id": "98a93467456543c4e66526eb053828850f3d3e475f132c93e4a3c317a4015a5e",
+      "samples": 4266,
+      "shape": [
+        4266,
+        6,
+        17,
+        1024
+      ]
+    },
+    "train/future": {
+      "checked_indices": [
+        0,
+        9531,
+        19061
+      ],
+      "dtype": "float16",
+      "extractor_id": "98a93467456543c4e66526eb053828850f3d3e475f132c93e4a3c317a4015a5e",
+      "samples": 19062,
+      "shape": [
+        19062,
+        16,
+        17,
+        1024
+      ]
+    },
+    "train/history": {
+      "checked_indices": [
+        0,
+        9531,
+        19061
+      ],
+      "dtype": "float16",
+      "extractor_id": "98a93467456543c4e66526eb053828850f3d3e475f132c93e4a3c317a4015a5e",
+      "samples": 19062,
+      "shape": [
+        19062,
+        6,
+        17,
+        1024
+      ]
+    },
+    "validation/future": {
+      "checked_indices": [
+        0,
+        1980,
+        3959
+      ],
+      "dtype": "float16",
+      "extractor_id": "98a93467456543c4e66526eb053828850f3d3e475f132c93e4a3c317a4015a5e",
+      "samples": 3960,
+      "shape": [
+        3960,
+        16,
+        17,
+        1024
+      ]
+    },
+    "validation/history": {
+      "checked_indices": [
+        0,
+        1980,
+        3959
+      ],
+      "dtype": "float16",
+      "extractor_id": "98a93467456543c4e66526eb053828850f3d3e475f132c93e4a3c317a4015a5e",
+      "samples": 3960,
+      "shape": [
+        3960,
+        6,
+        17,
+        1024
+      ]
+    }
+  },
+  "complete": true,
+  "extractor_ids": [
+    "98a93467456543c4e66526eb053828850f3d3e475f132c93e4a3c317a4015a5e"
+  ]
+}

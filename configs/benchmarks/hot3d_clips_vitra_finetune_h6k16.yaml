@@ -1,0 +1,96 @@
+seed: 46
+
+runtime:
+  device: auto
+
+data:
+  kind: hot3d_clips_h6k16
+  manifests:
+    train: /home/jun.se/EGO-HAND-WM/data/hot3d_clips_h6_k16/hot3d_clips_aria_train_h6_k16.jsonl
+    validation: /home/jun.se/EGO-HAND-WM/data/hot3d_clips_h6_k16/hot3d_clips_aria_validation_h6_k16.jsonl
+    test: /home/jun.se/EGO-HAND-WM/data/hot3d_clips_h6_k16/hot3d_clips_aria_test_h6_k16.jsonl
+  split: train
+  camera_stream: 214-1
+  anchor: last_observed
+  wrist_target: xyz
+  visual_feature_root: /scratch/jun.se/EGO-HAND-WM/TRAJECTORY_DINOTXT
+  future_visual_feature_root: /scratch/jun.se/EGO-HAND-WM/TRAJECTORY_DINOTXT
+  future_visual_splits: [train, validation]
+  visual_feature_dtype: float16
+  missing_text_feature_dim: 2048
+  decode_rgb: false
+  require_context_visual: true
+  require_future_visual: true
+
+model:
+  hidden_dim: 1024
+  heads: 16
+  context_depth: 6
+  depth: 12
+  mlp_ratio: 4.0
+  dropout: 0.0
+  qk_norm: true
+  qk_norm_eps: 0.000001
+  physical_max_period: 10.0
+  future_visual_latent_dim: 1024
+  future_visual_tokens: 17
+  future_visual_depth: 12
+  use_fingertips: false
+  vision:
+    kind: precomputed_dinotxt
+    feature_dim: 1024
+    spatial_tokens: 16
+  text:
+    kind: precomputed_dinotxt
+    feature_dim: 2048
+
+loss:
+  rotation_weight: 0.1
+  ego_weight: 0.2
+  visual_target_normalization: per_token_layer_norm
+  visual_target_normalization_eps: 0.000001
+  visual_weight: 1.0
+
+training:
+  output_dir: /scratch/jun.se/EGO-HAND-WM/runs/hot3d-clips-vitra-h6k16-v1
+  init_checkpoint: /scratch/jun.se/EGO-HAND-WM/runs/vitra-pretrain-visual-aux-v2/last.pt
+  init_strict: true
+  batch_size: 16
+  num_workers: 8
+  persistent_workers: true
+  prefetch_factor: 2
+  drop_last: true
+  max_steps: 8000
+  warmup_steps: 300
+  learning_rate: 0.00002
+  min_lr_ratio: 0.1
+  weight_decay: 0.05
+  gradient_accumulation_steps: 4
+  grad_clip: 1.0
+  bf16: true
+  fused_optimizer: true
+  find_unused_parameters: false
+  gradient_as_bucket_view: true
+  static_graph: true
+  broadcast_buffers: false
+  overwrite: false
+  log_every: 10
+  save_every: 1000
+  model_only_save_every: 500
+  save_last: true
+  resume: null
+
+validation:
+  enabled: true
+  kind: trajectory
+  every: 400
+  batch_size: 16
+  num_workers: 8
+  persistent_workers: true
+  prefetch_factor: 2
+  ode_steps: 8
+  ode_method: heun
+  selection_metric: validation/trajectory/ade_m
+  selection_mode: min
+  selection_min_delta: 0.0001
+  early_stopping_patience: 8

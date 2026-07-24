@@ -7,7 +7,7 @@ import tarfile
 from pathlib import Path
 
 
-SCRIPT = Path("/n/home08/sjmathy/EGO-HAND-WM/scripts/prepare_vitra_shards.py")
+SCRIPT = Path(__file__).resolve().parents[1] / "scripts/prepare_vitra_shards.py"
 SPEC = importlib.util.spec_from_file_location("prepare_vitra_shards", SCRIPT)
 assert SPEC is not None and SPEC.loader is not None
 sharder = importlib.util.module_from_spec(SPEC)

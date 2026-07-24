@@ -1,0 +1,3 @@
+[console_scripts]
+ego-hand-wm-train = ego_hand_wm.cli.train:main
+ego-hand-wm-validate-vitra = ego_hand_wm.cli.validate_vitra:main

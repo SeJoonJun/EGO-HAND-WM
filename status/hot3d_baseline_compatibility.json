@@ -1,0 +1,48 @@
+{
+  "coordinate_contract": "absolute_xyz_in_last_observed_camera_frame",
+  "future_steps": 16,
+  "history_steps": 6,
+  "normalization": "train_split_xyz_standardization",
+  "residual_to_last_observation": false,
+  "splits": {
+    "test": {
+      "checked_indices": [
+        0,
+        2133,
+        4265
+      ],
+      "max_abs_xyz_error_m": {
+        "handsonvlm": 0.0,
+        "mmtwin": 0.0,
+        "usst": 2.9802322387695312e-08
+      },
+      "records": 4266
+    },
+    "train": {
+      "checked_indices": [
+        0,
+        9531,
+        19061
+      ],
+      "max_abs_xyz_error_m": {
+        "handsonvlm": 0.0,
+        "mmtwin": 0.0,
+        "usst": 7.450580596923828e-09
+      },
+      "records": 19062
+    },
+    "validation": {
+      "checked_indices": [
+        0,
+        1980,
+        3959
+      ],
+      "max_abs_xyz_error_m": {
+        "handsonvlm": 0.0,
+        "mmtwin": 0.0,
+        "usst": 1.1175870895385742e-08
+      },
+      "records": 3960
+    }
+  }
+}

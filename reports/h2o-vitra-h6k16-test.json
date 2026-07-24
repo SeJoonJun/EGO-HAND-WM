@@ -1,0 +1,9 @@
+{
+  "checkpoint": "/scratch/jun.se/EGO-HAND-WM/runs/h2o-vitra-h6k16-v1/best.pt",
+  "samples": 3832,
+  "split": "test",
+  "test/test/ade_m": 0.026096896468923485,
+  "test/test/camera_translation_m": 0.009582157027850466,
+  "test/test/examples": 3832.0,
+  "test/test/fde_m": 0.0426131603396731
+}

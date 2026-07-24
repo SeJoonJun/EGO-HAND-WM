@@ -5,13 +5,28 @@ runtime:
 
 data:
   kind: vitra_shards
-  shard_glob: /n/netscratch/ydu_lab/Lab/sjmathy/VITRA_SHARDS/*.tar
-  pts_root: /n/netscratch/ydu_lab/Lab/sjmathy/VITRA_PTS
+  shard_glob: /scratch/jun.se/EGO-HAND-WM/VITRA_SHARDS/*.tar
+  pts_root: /scratch/jun.se/EGO-HAND-WM/VITRA_PTS
+  exclusion_database: /scratch/jun.se/EGO-HAND-WM/VITRA_FRAME_REQUESTS/requests.sqlite
+  # Both Ego4D annotation archives address one shared physical video/PTS/feature pool.
+  dataset_aliases:
+    ego4d_other: ego4d_cooking_and_cleaning
+  split_manifest: /home/jun.se/EGO-HAND-WM/configs/splits/vitra-small-validation-v1.json
+  split: train
+  unique_feature_root: /scratch/jun.se/EGO-HAND-WM/VITRA_DINOTXT_UNIQUE
+  staged_rgb_root: /scratch/jun.se/EGO-HAND-WM/VITRA_RGB_256
+  text_feature_root: /scratch/jun.se/EGO-HAND-WM/VITRA_DINOTXT_TEXT
   fallback_fps: null
-  history_steps: 6
-  future_steps: 12
-  left_mano_policy: mask
-  shuffle_buffer: 256
+  sampling:
+    kind: native_variable
+    history_steps: 6
+    target_counts: [4, 8, 12, 16]
+    rare_target_count: 24
+    rare_target_probability: 0.10
+    consecutive_probability: 0.70
+  left_mano_policy: as_stored
+  attach_future_visual: true
+  shuffle_buffer: 512
   require_context_visual: true
   require_future_visual: true
 
@@ -22,36 +37,53 @@ model:
   depth: 12
   mlp_ratio: 4.0
   dropout: 0.0
+  qk_norm: true
+  qk_norm_eps: 0.000001
   physical_max_period: 10.0
   future_visual_latent_dim: 1024
+  future_visual_tokens: 17
+  # Match geometry depth so every visual-flow layer consumes the same cache level.
+  future_visual_depth: 12
   use_fingertips: false
   vision:
-    kind: precomputed
-    precomputed_dim: 1024
+    kind: precomputed_dinotxt
+    feature_dim: 1024
+    spatial_tokens: 16
   text:
-    kind: hf
-    model_name: google-t5/t5-base
-    max_tokens: 32
+    kind: precomputed_dinotxt
+    feature_dim: 2048
 
 loss:
   rotation_weight: 0.1
   ego_weight: 0.2
-  visual_weight: 0.1
+  # Normalize each frozen DINO.txt class/spatial target token over its 1024 channels before
+  # flow noising. Observed context tokens stay in their native DINO.txt representation.
+  visual_target_normalization: per_token_layer_norm
+  visual_target_normalization_eps: 0.000001
+  visual_weight: 1.0
 
 training:
-  output_dir: /n/netscratch/ydu_lab/Lab/sjmathy/EGO-HAND-WM/runs/vitra-pretrain-visual-aux-v1
-  batch_size: 8
-  num_workers: 8
+  output_dir: /scratch/jun.se/EGO-HAND-WM/runs/vitra-pretrain-visual-aux-v2
+  batch_size: 16
+  num_workers: 4
   drop_last: true
   max_steps: 200000
   warmup_steps: 5000
   learning_rate: 0.0001
   weight_decay: 0.05
-  gradient_accumulation_steps: 8
+  gradient_accumulation_steps: 4
   grad_clip: 1.0
   bf16: true
-  find_unused_parameters: true
+  find_unused_parameters: false
   overwrite: false
   log_every: 10
   save_every: 5000
   resume: null
+
+validation:
+  enabled: true
+  every: 1000
+  batch_size: 16
+  num_workers: 4
+  ode_steps: 4
+  ode_method: heun

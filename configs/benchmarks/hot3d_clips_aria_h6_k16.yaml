@@ -1,0 +1,27 @@
+protocol:
+  name: h6_k16_30hz
+  source: official_hot3d_clips_public_train
+  fps: 30
+  history_steps: 6
+  future_steps: 16
+  total_steps: 22
+  history_span_seconds: 0.16666666666666666
+  final_horizon_seconds: 0.5333333333333333
+  spatial_anchor: last_observed_camera
+  time_zero: last_observed_frame
+  train_window_stride: 16
+dataset:
+  name: hot3d_clips_aria
+  device: Aria
+  camera_stream: 214-1
+  public_source_split: train
+  controlled_participant_split: true
+  official_test_labels_used: false
+  manifest_pattern: hot3d_clips_aria_{split}_h6_k16.jsonl
+  target: future_wrist_translation_xyz
+  scored_target: future_wrist_translation_xyz
+  wrist_target: xyz
+  articulation: masked_until_official_hand_model_decode
+evaluation:
+  metrics: [ade_3d_m, fde_3d_m]
+  aggregate: [per_hand, macro]

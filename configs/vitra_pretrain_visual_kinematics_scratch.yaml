@@ -1,0 +1,124 @@
+seed: 44
+
+runtime:
+  device: auto
+
+data:
+  kind: vitra_shards
+  shard_glob: /scratch/jun.se/EGO-HAND-WM/VITRA_SHARDS/*.tar
+  pts_root: /scratch/jun.se/EGO-HAND-WM/VITRA_PTS
+  exclusion_database: /scratch/jun.se/EGO-HAND-WM/VITRA_FRAME_REQUESTS/requests.sqlite
+  dataset_aliases:
+    ego4d_other: ego4d_cooking_and_cleaning
+  split_manifest: /home/jun.se/EGO-HAND-WM/configs/splits/vitra-small-validation-v1.json
+  split: train
+  unique_feature_root: /scratch/jun.se/EGO-HAND-WM/VITRA_DINOTXT_UNIQUE
+  staged_rgb_root: /scratch/jun.se/EGO-HAND-WM/VITRA_RGB_256
+  text_feature_root: /scratch/jun.se/EGO-HAND-WM/VITRA_DINOTXT_TEXT
+  fallback_fps: null
+  sampling:
+    kind: native_variable
+    history_steps: 6
+    target_counts: [4, 8, 12, 16]
+    rare_target_count: 24
+    rare_target_probability: 0.10
+    consecutive_probability: 0.70
+  left_mano_policy: as_stored
+  # Retain the complete dual-expert objective in this from-scratch run.
+  attach_future_visual: true
+  shuffle_buffer: 512
+  require_context_visual: true
+  require_future_visual: true
+
+model:
+  hidden_dim: 1024
+  heads: 16
+  context_depth: 6
+  depth: 12
+  mlp_ratio: 4.0
+  dropout: 0.0
+  qk_norm: true
+  qk_norm_eps: 0.000001
+  physical_max_period: 10.0
+  future_visual_latent_dim: 1024
+  future_visual_tokens: 17
+  future_visual_depth: 12
+  use_fingertips: false
+  hand_kinematics:
+    enabled: true
+    heads: 16
+    depth: 1
+    mlp_ratio: 2.0
+    dropout: 0.0
+  vision:
+    kind: precomputed_dinotxt
+    feature_dim: 1024
+    spatial_tokens: 16
+  text:
+    kind: precomputed_dinotxt
+    feature_dim: 2048
+
+loss:
+  rigid_rotation_weight: 0.1
+  mano_rotation_weight: 0.5
+  ego_weight: 0.2
+  visual_target_normalization: per_token_layer_norm
+  visual_target_normalization_eps: 0.000001
+  visual_weight: 1.0
+  hand_joint_weight: 10.0
+  fingertip_weight: 10.0
+  hand_motion_weight: 0.05
+  hand_position_beta: 0.01
+  hand_motion_beta: 0.05
+
+training:
+  output_dir: /scratch/jun.se/EGO-HAND-WM/runs/vitra-visual-kinematics-scratch-v1
+  # Deliberately no init_checkpoint: every trainable parameter starts from scratch.
+  batch_size: 64
+  num_workers: 4
+  persistent_workers: true
+  prefetch_factor: 2
+  drop_last: true
+  # The old curve reached its useful plateau around 160k-180k. This is a safety cap;
+  # generated validation and early stopping determine the actual endpoint.
+  max_steps: 180000
+  warmup_steps: 5000
+  learning_rate: 0.0001
+  min_lr_ratio: 0.05
+  weight_decay: 0.05
+  gradient_accumulation_steps: 1
+  grad_clip: 1.0
+  bf16: true
+  fused_optimizer: true
+  find_unused_parameters: false
+  gradient_as_bucket_view: true
+  static_graph: true
+  broadcast_buffers: false
+  # Geometry retains the original uniform noise-to-clean flow time.
+  geometry_flow_time:
+    distribution: uniform
+    shift: 1.0
+  # Apply Flow World Models' DINO-space time shift only to the visual expert.
+  visual_flow_time:
+    distribution: uniform
+    shift: 13.0
+  overwrite: false
+  log_every: 10
+  save_every: 20000
+  model_only_save_every: 5000
+  save_last: true
+  resume: null
+
+validation:
+  enabled: true
+  every: 2000
+  batch_size: 32
+  num_workers: 4
+  persistent_workers: true
+  prefetch_factor: 2
+  ode_steps: 4
+  ode_method: heun
+  selection_metric: validation/macro/fingertip_mpjpe_cm
+  selection_mode: min
+  selection_min_delta: 0.01
+  early_stopping_patience: 10

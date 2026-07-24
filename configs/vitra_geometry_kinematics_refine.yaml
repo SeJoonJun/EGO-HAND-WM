@@ -1,0 +1,114 @@
+seed: 43
+
+runtime:
+  device: auto
+
+data:
+  kind: vitra_shards
+  shard_glob: /scratch/jun.se/EGO-HAND-WM/VITRA_SHARDS/*.tar
+  pts_root: /scratch/jun.se/EGO-HAND-WM/VITRA_PTS
+  exclusion_database: /scratch/jun.se/EGO-HAND-WM/VITRA_FRAME_REQUESTS/requests.sqlite
+  dataset_aliases:
+    ego4d_other: ego4d_cooking_and_cleaning
+  split_manifest: /home/jun.se/EGO-HAND-WM/configs/splits/vitra-small-validation-v1.json
+  split: train
+  unique_feature_root: /scratch/jun.se/EGO-HAND-WM/VITRA_DINOTXT_UNIQUE
+  staged_rgb_root: /scratch/jun.se/EGO-HAND-WM/VITRA_RGB_256
+  text_feature_root: /scratch/jun.se/EGO-HAND-WM/VITRA_DINOTXT_TEXT
+  # Keep frozen context features compact through host transfer. BF16 autocast performs the
+  # learned projection on GPU; this refinement has no future-visual noise target.
+  visual_feature_dtype: float16
+  fallback_fps: null
+  sampling:
+    kind: native_variable
+    history_steps: 6
+    target_counts: [4, 8, 12, 16]
+    rare_target_count: 24
+    rare_target_probability: 0.10
+    consecutive_probability: 0.70
+  left_mano_policy: as_stored
+  attach_future_visual: false
+  shuffle_buffer: 512
+  require_context_visual: true
+  require_future_visual: false
+
+model:
+  hidden_dim: 1024
+  heads: 16
+  context_depth: 6
+  depth: 12
+  mlp_ratio: 4.0
+  dropout: 0.0
+  qk_norm: true
+  qk_norm_eps: 0.000001
+  physical_max_period: 10.0
+  future_visual_latent_dim: 0
+  use_fingertips: false
+  hand_kinematics:
+    enabled: true
+    heads: 16
+    depth: 1
+    mlp_ratio: 2.0
+    dropout: 0.0
+  vision:
+    kind: precomputed_dinotxt
+    feature_dim: 1024
+    spatial_tokens: 16
+  text:
+    kind: precomputed_dinotxt
+    feature_dim: 2048
+
+loss:
+  # Preserve the rigid branch while directly strengthening the weak MANO branch.
+  rigid_rotation_weight: 0.1
+  mano_rotation_weight: 0.5
+  ego_weight: 0.2
+  visual_weight: 0.0
+  hand_joint_weight: 10.0
+  fingertip_weight: 10.0
+  hand_motion_weight: 0.05
+  hand_position_beta: 0.01
+  hand_motion_beta: 0.05
+
+training:
+  output_dir: /scratch/jun.se/EGO-HAND-WM/runs/vitra-geometry-kinematics-refine-v1
+  init_checkpoint: /scratch/jun.se/EGO-HAND-WM/runs/vitra-pretrain-visual-aux-v2/last.pt
+  init_strict: false
+  batch_size: 64
+  num_workers: 4
+  persistent_workers: true
+  prefetch_factor: 2
+  drop_last: true
+  max_steps: 30000
+  warmup_steps: 1000
+  learning_rate: 0.00005
+  min_lr_ratio: 0.1
+  weight_decay: 0.05
+  gradient_accumulation_steps: 1
+  grad_clip: 1.0
+  bf16: true
+  fused_optimizer: true
+  find_unused_parameters: false
+  gradient_as_bucket_view: true
+  static_graph: true
+  broadcast_buffers: false
+  overwrite: false
+  log_every: 10
+  save_every: 10000
+  model_only_save_every: 2500
+  save_last: true
+  resume: null
+
+validation:
+  enabled: true
+  every: 1000
+  batch_size: 32
+  num_workers: 4
+  persistent_workers: true
+  prefetch_factor: 2
+  ode_steps: 4
+  ode_method: heun
+  selection_metric: validation/macro/mano_rotation_deg
+  selection_mode: min
+  selection_min_delta: 0.02
+  early_stopping_patience: 8

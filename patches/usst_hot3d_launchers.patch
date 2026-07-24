@@ -1,0 +1,150 @@
+diff --git a/base/scripts/smoke_h6k16.py b/mod/scripts/smoke_h6k16.py
+index 8c4c016..7c2eba2 100644
+--- a/base/scripts/smoke_h6k16.py
++++ b/mod/scripts/smoke_h6k16.py
+@@ -24,7 +24,11 @@ def main() -> None:
+         "--config",
+         default="config/adapted/h2o_h6_k16_res18_3d.yml",
+     )
+-    parser.add_argument("--dataset", choices=("h2o", "egopat3d"), default="h2o")
++    parser.add_argument(
++        "--dataset",
++        choices=("h2o", "egopat3d", "hot3d"),
++        default="h2o",
++    )
+     parser.add_argument("--device", default="cpu")
+     args = parser.parse_args()
+ 
+@@ -34,9 +38,12 @@ def main() -> None:
+     cfg.TRAIN.batch_size = 1
+     cfg.TEST.batch_size = 1
+ 
+-    loader_module = importlib.import_module(
+-        "src.H2OLoader" if args.dataset == "h2o" else "src.EgoPAT3DLoader"
+-    )
++    loader_name = {
++        "h2o": "src.H2OLoader",
++        "egopat3d": "src.EgoPAT3DLoader",
++        "hot3d": "src.H6K16ManifestLoader",
++    }[args.dataset]
++    loader_module = importlib.import_module(loader_name)
+     train_loader, _ = loader_module.build_dataloaders(cfg, phase="trainval")
+     filename, clip, camera, nframes, trajectory = next(iter(train_loader))
+ 
+@@ -59,6 +66,10 @@ def main() -> None:
+         assert model.predict.out_layer is None
+     if getattr(cfg.MODEL, "velocity_output_activation", None) == "linear":
+         assert model.predict_velo.out_layer is None
++    if args.dataset == "hot3d":
++        assert cfg.MODEL.trajectory_normalization == "xyz_standardize"
++        assert cfg.MODEL.residual_to_last_observation is False
++        assert cfg.MODEL.zero_initialize_residual is False
+     model.train()
+ 
+     from src.optimizers import get_optimizer, get_scheduler
+diff --git a/mod/slurm/eval_hot3d_absolute.sbatch b/mod/slurm/eval_hot3d_absolute.sbatch
+new file mode 100644
+index 0000000..122ef75
+--- /dev/null
++++ b/mod/slurm/eval_hot3d_absolute.sbatch
+@@ -0,0 +1,32 @@
++#!/usr/bin/env bash
++#SBATCH --job-name=usst-hot3d-eval
++#SBATCH --account=l.torresani
++#SBATCH --partition=torresani-lab
++#SBATCH --nodes=1
++#SBATCH --ntasks=1
++#SBATCH --cpus-per-task=8
++#SBATCH --mem=128G
++#SBATCH --gres=gpu:h200:1
++#SBATCH --time=04:00:00
++#SBATCH --output=/home/jun.se/EGO-HAND-WM-REF/USST/logs/%x-%j.out
++#SBATCH --error=/home/jun.se/EGO-HAND-WM-REF/USST/logs/%x-%j.err
++
++set -euo pipefail
++
++REPO=/home/jun.se/EGO-HAND-WM-REF/USST
++PYTHON=/projects/torresani-lab/sejoon/miniconda3/envs/usst-h6k16/bin/python
++CONFIG=config/adapted/hot3d_clips_h6_k16_res18_3d_absolute.yml
++TAG=${TAG_OVERRIDE:-paper-hot3d-h6k16-absolute-seed0}
++BEST=/projects/torresani-lab/sejoon/runs/baselines/USST/HOT3DClips/${TAG}/snapshot/best.pth
++
++if [[ ! -s "$BEST" ]]; then
++  echo "Missing best-validation checkpoint: $BEST" >&2
++  exit 3
++fi
++
++cd "$REPO"
++exec "$PYTHON" -u test_hot3d.py \
++  --config "$CONFIG" \
++  --tag "$TAG" \
++  --num_workers 8 \
++  --checkpoint "$BEST"
+diff --git a/mod/slurm/smoke_hot3d_absolute.sbatch b/mod/slurm/smoke_hot3d_absolute.sbatch
+new file mode 100644
+index 0000000..28196aa
+--- /dev/null
++++ b/mod/slurm/smoke_hot3d_absolute.sbatch
+@@ -0,0 +1,24 @@
++#!/usr/bin/env bash
++#SBATCH --job-name=usst-hot3d-smoke
++#SBATCH --account=l.torresani
++#SBATCH --partition=torresani-lab
++#SBATCH --nodes=1
++#SBATCH --ntasks=1
++#SBATCH --cpus-per-task=8
++#SBATCH --mem=64G
++#SBATCH --gres=gpu:h200:1
++#SBATCH --time=00:30:00
++#SBATCH --output=/home/jun.se/EGO-HAND-WM-REF/USST/logs/%x-%j.out
++#SBATCH --error=/home/jun.se/EGO-HAND-WM-REF/USST/logs/%x-%j.err
++
++set -euo pipefail
++
++REPO=/home/jun.se/EGO-HAND-WM-REF/USST
++PYTHON=/projects/torresani-lab/sejoon/miniconda3/envs/usst-h6k16/bin/python
++CONFIG=config/adapted/hot3d_clips_h6_k16_res18_3d_absolute.yml
++
++cd "$REPO"
++exec "$PYTHON" -u scripts/smoke_h6k16.py \
++  --config "$CONFIG" \
++  --dataset hot3d \
++  --device cuda
+diff --git a/mod/slurm/train_hot3d_absolute.sbatch b/mod/slurm/train_hot3d_absolute.sbatch
+new file mode 100644
+index 0000000..40aba1a
+--- /dev/null
++++ b/mod/slurm/train_hot3d_absolute.sbatch
+@@ -0,0 +1,32 @@
++#!/usr/bin/env bash
++#SBATCH --job-name=usst-hot3d-train
++#SBATCH --account=l.torresani
++#SBATCH --partition=torresani-lab
++#SBATCH --nodes=1
++#SBATCH --ntasks=1
++#SBATCH --cpus-per-task=8
++#SBATCH --mem=128G
++#SBATCH --gres=gpu:h200:1
++#SBATCH --time=1-00:00:00
++#SBATCH --output=/home/jun.se/EGO-HAND-WM-REF/USST/logs/%x-%j.out
++#SBATCH --error=/home/jun.se/EGO-HAND-WM-REF/USST/logs/%x-%j.err
++
++set -euo pipefail
++
++REPO=/home/jun.se/EGO-HAND-WM-REF/USST
++PYTHON=/projects/torresani-lab/sejoon/miniconda3/envs/usst-h6k16/bin/python
++CONFIG=config/adapted/hot3d_clips_h6_k16_res18_3d_absolute.yml
++TAG=${TAG_OVERRIDE:-paper-hot3d-h6k16-absolute-seed0}
++SNAPSHOT=/projects/torresani-lab/sejoon/runs/baselines/USST/HOT3DClips/${TAG}/snapshot/last.pth
++
++cd "$REPO"
++args=(
++  --config "$CONFIG"
++  --tag "$TAG"
++  --num_workers 8
++  --epochs 40
++)
++if [[ "${NO_RESUME:-0}" != 1 && -s "$SNAPSHOT" ]]; then
++  args+=(--resume "$SNAPSHOT")
++fi
++exec "$PYTHON" -u train.py "${args[@]}"

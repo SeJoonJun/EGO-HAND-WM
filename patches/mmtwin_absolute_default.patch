@@ -1,0 +1,53 @@
+diff --git a/base/models/egoman_style_adapter.py b/mod/models/egoman_style_adapter.py
+index 20b955c..dbb6d79 100644
+--- a/base/models/egoman_style_adapter.py
++++ b/mod/models/egoman_style_adapter.py
+@@ -48,12 +48,12 @@ class AdaptedMMTwinConfig:
+     regression_loss_weight: float = 0.2
+     angle_loss_weight: float = 0.01
+     schedule_sampler: str = "lossaware"
+-    # Decode a displacement from the last observed point.  The latent twin
+-    # diffusion remains unchanged; only the trajectory parameterization is
+-    # made metric-aligned and persistence-safe.
+-    coordinate_contract: str = "anchor_xyz_train_standardized_residual_v2"
+-    residual_to_last_observation: bool = True
+-    zero_initialize_residual: bool = True
++    # Predict absolute standardized XYZ in the last-observed-camera frame.
++    # Residual output remains available only when explicitly requested by an
++    # ablation; it is not the default baseline contract.
++    coordinate_contract: str = "anchor_xyz_train_standardized_absolute_v3"
++    residual_to_last_observation: bool = False
++    zero_initialize_residual: bool = False
+ 
+     @property
+     def total_steps(self) -> int:
+diff --git a/base/tests/test_h6k16_adapter.py b/mod/tests/test_h6k16_adapter.py
+index c73d6f2..829117c 100644
+--- a/base/tests/test_h6k16_adapter.py
++++ b/mod/tests/test_h6k16_adapter.py
+@@ -165,6 +165,9 @@ def test_zero_initialized_decoder_is_persistence_before_training():
+         hand_layers=1,
+         egomotion_layers=1,
+         vision_model="tiny_cnn",
++        coordinate_contract="anchor_xyz_train_standardized_residual_v2",
++        residual_to_last_observation=True,
++        zero_initialize_residual=True,
+     )
+     model = EgoMANStyleMMTwin(config)
+     final_layer = model.trajectory_decoder.feat_embed[-1]
+@@ -197,6 +200,15 @@ def test_absolute_decoder_has_no_persistence_shortcut():
+     assert model.config.residual_to_last_observation is False
+ 
+ 
++def test_default_configuration_is_absolute_not_residual():
++    config = AdaptedMMTwinConfig(vision_model="tiny_cnn")
++    assert config.coordinate_contract == (
++        "anchor_xyz_train_standardized_absolute_v3"
++    )
++    assert config.residual_to_last_observation is False
++    assert config.zero_initialize_residual is False
++
++
+ def test_real_hot3d_manifest_decodes_metric_xyz_and_rgb():
+     manifest = Path(
+         "/home/jun.se/EGO-HAND-WM/data/hot3d_clips_h6_k16/"

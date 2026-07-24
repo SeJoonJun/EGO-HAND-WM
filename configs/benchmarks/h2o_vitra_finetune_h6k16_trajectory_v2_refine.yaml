@@ -1,0 +1,98 @@
+seed: 244
+
+runtime:
+  device: auto
+
+data:
+  kind: trajectory_h6k16
+  manifests:
+    train: /home/jun.se/EGO-HAND-WM/data/h6_k16_manifests/h2o_train_h6_k16.jsonl
+    validation: /home/jun.se/EGO-HAND-WM/data/h6_k16_manifests/h2o_val_h6_k16.jsonl
+    test: /home/jun.se/EGO-HAND-WM/data/h6_k16_manifests/h2o_test_h6_k16.jsonl
+  split: train
+  visual_feature_root: /scratch/jun.se/EGO-HAND-WM/TRAJECTORY_DINOTXT
+  future_visual_feature_root: /scratch/jun.se/EGO-HAND-WM/TRAJECTORY_DINOTXT
+  future_visual_splits: [train, val, validation]
+  visual_feature_dtype: float16
+  missing_text_feature_dim: 2048
+  decode_rgb: false
+  require_context_visual: true
+  require_future_visual: true
+
+model:
+  hidden_dim: 1024
+  heads: 16
+  context_depth: 6
+  depth: 12
+  mlp_ratio: 4.0
+  dropout: 0.0
+  qk_norm: true
+  qk_norm_eps: 0.000001
+  physical_max_period: 10.0
+  future_visual_latent_dim: 1024
+  future_visual_tokens: 17
+  future_visual_depth: 12
+  use_fingertips: false
+  vision:
+    kind: precomputed_dinotxt
+    feature_dim: 1024
+    spatial_tokens: 16
+  text:
+    kind: precomputed_dinotxt
+    feature_dim: 2048
+
+loss:
+  rotation_weight: 0.1
+  ego_weight: 0.2
+  visual_target_normalization: per_token_layer_norm
+  visual_target_normalization_eps: 0.000001
+  visual_weight: 0.05
+  trajectory_position_weight: 4.0
+  trajectory_endpoint_weight: 6.0
+  trajectory_velocity_weight: 0.05
+  trajectory_horizon_power: 1.0
+  trajectory_velocity_beta: 0.05
+
+training:
+  output_dir: /scratch/jun.se/EGO-HAND-WM/runs/h2o-vitra-h6k16-trajectory-v2-refine
+  init_checkpoint: /scratch/jun.se/EGO-HAND-WM/runs/h2o-vitra-h6k16-v1/best.pt
+  init_strict: true
+  batch_size: 16
+  num_workers: 4
+  persistent_workers: true
+  prefetch_factor: 2
+  drop_last: true
+  max_steps: 3000
+  warmup_steps: 100
+  learning_rate: 0.000005
+  min_lr_ratio: 0.1
+  weight_decay: 0.05
+  gradient_accumulation_steps: 4
+  grad_clip: 1.0
+  bf16: true
+  fused_optimizer: true
+  find_unused_parameters: false
+  gradient_as_bucket_view: true
+  static_graph: true
+  broadcast_buffers: false
+  overwrite: false
+  log_every: 10
+  save_every: 1000
+  model_only_save_every: 500
+  save_last: true
+  resume: null
+
+validation:
+  enabled: true
+  kind: trajectory
+  every: 200
+  batch_size: 64
+  num_workers: 4
+  persistent_workers: true
+  prefetch_factor: 2
+  ode_steps: 8
+  ode_method: heun
+  selection_metric: validation/trajectory/mean_ade_fde_m
+  selection_mode: min
+  selection_min_delta: 0.00005
+  early_stopping_patience: 8

@@ -149,6 +149,45 @@ def validate_timestamps(values: np.ndarray) -> np.ndarray:
     return timestamps
 
 
+def _repair_duplicate_timestamps(values: np.ndarray, *, minimum_step: float) -> np.ndarray:
+    """Make duplicate PTS values strict without retiming the surrounding video.
+
+    Some otherwise-valid MP4 streams contain two frames with the same presentation timestamp.
+    VITRA still addresses both frames by index, so dropping either frame would break annotation
+    alignment.  Advance only the repeated value by one container clock tick, and refuse repairs
+    that would cross the next distinct source timestamp.
+    """
+    timestamps = np.asarray(values, dtype=np.float64)
+    if timestamps.ndim != 1:
+        raise ValueError(f"Timestamps must be one-dimensional, got {timestamps.shape}")
+    if len(timestamps) < 2:
+        raise ValueError("A video timestamp array must contain at least two frames")
+    if not np.isfinite(timestamps).all():
+        raise ValueError("Video timestamps contain NaN or Inf")
+    if not np.isfinite(minimum_step) or minimum_step <= 0:
+        raise ValueError(f"minimum_step must be positive and finite, got {minimum_step}")
+
+    source_diffs = np.diff(timestamps)
+    if np.any(source_diffs < 0):
+        raise ValueError("Video timestamps move backwards; duplicate-only repair is unsafe")
+    if not np.any(source_diffs == 0):
+        return validate_timestamps(timestamps)
+
+    repaired = timestamps.copy()
+    for index in range(1, len(repaired)):
+        if repaired[index] > repaired[index - 1]:
+            continue
+        candidate = repaired[index - 1] + minimum_step
+        next_distinct = timestamps[index + 1 :]
+        next_distinct = next_distinct[next_distinct > timestamps[index]]
+        if len(next_distinct) and candidate >= next_distinct[0]:
+            raise ValueError(
+                "Duplicate PTS run is too dense to repair within the next source timestamp"
+            )
+        repaired[index] = candidate
+    return validate_timestamps(repaired)
+
+
 def _expected_frame_count(stream: Any) -> int | None:
     declared = int(stream.frames or 0)
     if declared > 0:
@@ -160,10 +199,12 @@ def _expected_frame_count(stream: Any) -> int | None:
     return rounded if rounded > 0 and abs(estimate - rounded) <= 0.51 else None
 
 
-def _packet_pts_seconds(path: Path) -> np.ndarray:
+def _packet_pts_seconds(path: Path) -> tuple[np.ndarray, str]:
     values: list[float] = []
+    stream_time_base = 0.0
     with av.open(str(path)) as container:
         stream = container.streams.video[0]
+        stream_time_base = float(stream.time_base) if stream.time_base is not None else 0.0
         expected = _expected_frame_count(stream)
         for packet in container.demux(stream):
             if packet.size <= 0:
@@ -178,10 +219,20 @@ def _packet_pts_seconds(path: Path) -> np.ndarray:
         raise TimestampExtractionError(
             f"Packet count {len(values)} does not equal declared frame count {expected}: {path}"
         )
+    sorted_values = np.sort(np.asarray(values, dtype=np.float64))
     try:
-        return validate_timestamps(np.sort(np.asarray(values, dtype=np.float64)))
+        return validate_timestamps(sorted_values), "packet_pts"
     except ValueError as error:
-        raise TimestampExtractionError(str(error)) from error
+        if stream_time_base <= 0:
+            raise TimestampExtractionError(str(error)) from error
+        try:
+            repaired = _repair_duplicate_timestamps(
+                sorted_values,
+                minimum_step=stream_time_base,
+            )
+        except ValueError as repair_error:
+            raise TimestampExtractionError(str(repair_error)) from repair_error
+        return repaired, "packet_pts_duplicate_repair"
 
 
 def _decoded_frame_pts_seconds(path: Path) -> np.ndarray:
@@ -215,7 +266,7 @@ def frame_pts_seconds(path: Path) -> tuple[np.ndarray, str]:
     ``to_ndarray`` or performs a color conversion.
     """
     try:
-        return _packet_pts_seconds(path), "packet_pts"
+        return _packet_pts_seconds(path)
     except (TimestampExtractionError, FFmpegError, OSError):
         return _decoded_frame_pts_seconds(path), "decoded_frame_pts"
 

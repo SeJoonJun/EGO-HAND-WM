@@ -42,6 +42,30 @@ def save_checkpoint(
     os.replace(temporary, path)
 
 
+def save_model_checkpoint(
+    path: str | Path,
+    *,
+    model: torch.nn.Module,
+    step: int,
+    config: dict[str, Any],
+    metrics: dict[str, float] | None = None,
+) -> None:
+    """Atomically save compact inference/initialization weights without Adam state."""
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_suffix(path.suffix + ".tmp")
+    torch.save(
+        {
+            "model": _unwrap(model).state_dict(),
+            "step": int(step),
+            "config": config,
+            "metrics": dict(metrics or {}),
+        },
+        temporary,
+    )
+    os.replace(temporary, path)
+
+
 def load_checkpoint(
     path: str | Path,
     *,
@@ -50,7 +74,10 @@ def load_checkpoint(
     scheduler: torch.optim.lr_scheduler.LRScheduler | None = None,
     scaler: torch.amp.GradScaler | None = None,
 ) -> int:
-    payload = torch.load(path, map_location="cpu", weights_only=False)
+    try:
+        payload = torch.load(path, map_location="cpu", weights_only=False, mmap=True)
+    except TypeError:  # pragma: no cover - compatibility with older PyTorch
+        payload = torch.load(path, map_location="cpu", weights_only=False)
     _unwrap(model).load_state_dict(payload["model"])
     if optimizer is not None:
         optimizer.load_state_dict(payload["optimizer"])
@@ -65,3 +92,25 @@ def load_checkpoint(
     random.setstate(payload["python_rng"])
     return int(payload["step"])
 
+
+def initialize_model_from_checkpoint(
+    path: str | Path,
+    *,
+    model: torch.nn.Module,
+    strict: bool = False,
+) -> tuple[list[str], list[str]]:
+    """Load model weights only for a fresh refinement run.
+
+    Unlike resume, this intentionally does not restore the old optimizer, zero-ended scheduler,
+    step counter, or RNG.  Non-strict loading permits adding an auxiliary head or dropping the
+    training-only visual expert while retaining every compatible pretrained tensor.
+    """
+    try:
+        payload = torch.load(path, map_location="cpu", weights_only=False, mmap=True)
+    except TypeError:  # pragma: no cover - compatibility with older PyTorch
+        payload = torch.load(path, map_location="cpu", weights_only=False)
+    state = payload.get("model", payload) if isinstance(payload, dict) else payload
+    if not isinstance(state, dict):
+        raise ValueError(f"Checkpoint does not contain a model state dictionary: {path}")
+    incompatible = _unwrap(model).load_state_dict(state, strict=strict)
+    return list(incompatible.missing_keys), list(incompatible.unexpected_keys)

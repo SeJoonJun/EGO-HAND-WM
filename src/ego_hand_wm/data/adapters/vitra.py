@@ -1,8 +1,8 @@
 """VITRA raw episode to canonical A=C0 geometry conversion.
 
 This module intentionally never imports VITRA's training package. It reads the released raw
-episode schema and emits the shared contract. The left-hand MANO conversion is gated because
-VITRA stores both sides in a MANO_RIGHT-derived convention.
+episode schema and emits the shared contract. VITRA stores both sides in a MANO_RIGHT-derived
+local-pose convention; ``as_stored`` preserves that released, self-consistent representation.
 """
 
 from __future__ import annotations
@@ -45,18 +45,50 @@ def _mirror_rotations_x(rotation: torch.Tensor) -> torch.Tensor:
     return reflection @ rotation @ reflection
 
 
-def _select_text(episode: dict[str, Any], anchor_index: int) -> tuple[str, str, str]:
+def _select_text(
+    episode: dict[str, Any], anchor_index: int
+) -> tuple[str, dict[str, str], dict[str, tuple[int, int] | None]]:
+    """Select the action active at the anchor and retain its half-open validity interval.
+
+    VITRA's two hands have independent language windows.  Returning the intervals alongside the
+    prompt prevents a secondary-hand label from silently supervising frames belonging to another
+    action.  The original description is deterministic here; text rephrases remain available in
+    the raw episode for a later language-augmentation pass.
+    """
     side_text: dict[str, str] = {"left": "", "right": ""}
+    side_interval: dict[str, tuple[int, int] | None] = {"left": None, "right": None}
     for side in ("left", "right"):
         for description, frame_range in episode.get("text", {}).get(side, []):
             start, end = int(frame_range[0]), int(frame_range[1])
-            if start <= anchor_index < max(end, start + 1):
+            if start <= anchor_index < end:
                 side_text[side] = str(description).strip()
+                side_interval[side] = (start, end)
                 break
     primary = str(episode.get("anno_type", "right")).lower()
     order = (primary, "left" if primary == "right" else "right") if primary in side_text else ("right", "left")
     clauses = [f"{side.capitalize()} hand: {side_text[side]}" for side in order if side_text[side]]
-    return " ".join(clauses), side_text["left"], side_text["right"]
+    return " ".join(clauses), side_text, side_interval
+
+
+def enumerate_vitra_prompts(episode: dict[str, Any]) -> set[str]:
+    """Return every prompt that anchor-dependent VITRA sampling can produce.
+
+    The active language only changes at a half-open interval boundary, so one anchor from each
+    boundary segment is sufficient and avoids visiting every frame in long videos.
+    """
+    length = int(len(episode["extrinsics"]))
+    boundaries = {0, length}
+    for side in ("left", "right"):
+        for _, frame_range in episode.get("text", {}).get(side, []):
+            start = min(max(int(frame_range[0]), 0), length)
+            end = min(max(int(frame_range[1]), 0), length)
+            boundaries.update((start, end))
+    ordered = sorted(boundaries)
+    prompts: set[str] = set()
+    for start, end in zip(ordered, ordered[1:]):
+        if start < end:
+            prompts.add(_select_text(episode, start)[0])
+    return prompts
 
 
 def canonicalize_vitra_episode(
@@ -69,14 +101,14 @@ def canonicalize_vitra_episode(
     calibration_size: tuple[float, float] | None = None,
     intrinsics_crop_xywh: tuple[float, float, float, float] | None = None,
     context_images: torch.Tensor | None = None,
-    left_mano_policy: LeftManoPolicy = "mask",
+    left_mano_policy: LeftManoPolicy = "as_stored",
     source_dataset: str | None = None,
     episode_id: str | None = None,
 ) -> dict[str, Any]:
-    if left_mano_policy != "mask":
+    if left_mano_policy == "mirror_x":
         raise NotImplementedError(
-            "VITRA left-hand root/articulation uses a MANO_RIGHT-derived convention. "
-            "Only left_mano_policy='mask' is enabled until MANO_LEFT FK/chirality gates pass."
+            "Direct reflection into native MANO_LEFT rotations is not validated. Use "
+            "left_mano_policy='as_stored' for VITRA's released right-canonical left pose."
         )
     history_indices = np.asarray(history_indices, dtype=np.int64)
     future_indices = np.asarray(future_indices, dtype=np.int64)
@@ -107,6 +139,7 @@ def canonicalize_vitra_episode(
     mano_rot6: dict[str, torch.Tensor] = {}
     validity: dict[str, torch.Tensor] = {}
     fingertips: dict[str, torch.Tensor] = {}
+    hand_joints_local: dict[str, torch.Tensor] = {}
     for side in ("left", "right"):
         side_data = episode[side]
         root_world = _make_transform(
@@ -128,6 +161,10 @@ def canonicalize_vitra_episode(
         joints_world = _as_float_tensor(side_data["joints_worldspace"])[indices]
         joints_anchor = transform_points(anchor_world_to_camera.expand(len(indices), -1, -1), joints_world)
         fingertips[side] = joints_anchor[:, FINGERTIP_INDICES]
+        # Articulation targets should not contain global wrist or camera motion.  Expressing all
+        # 21 joints in the instantaneous wrist-root frame gives the kinematic auxiliary head a
+        # direct, metric target for finger shape while the canonical wrist stream handles SE(3).
+        hand_joints_local[side] = transform_points(invert(root_world), joints_world)
 
     state = SCHEMA.pack(
         camera_pose9,
@@ -136,11 +173,23 @@ def canonicalize_vitra_episode(
         mano_rot6["left"],
         mano_rot6["right"],
     )
+    combined_text, side_text, side_interval = _select_text(episode, anchor_index)
+    language_validity: dict[str, torch.Tensor] = {}
+    for side in ("left", "right"):
+        interval = side_interval[side]
+        if interval is None:
+            language_validity[side] = torch.zeros(len(indices), dtype=torch.bool)
+        else:
+            start, end = interval
+            language_validity[side] = torch.as_tensor(
+                (query_indices >= start) & (query_indices < end), dtype=torch.bool
+            )
+
     stream_mask = torch.ones(len(indices), 5, dtype=torch.bool)
-    stream_mask[:, 1] = validity["left"]
-    stream_mask[:, 2] = validity["right"]
-    stream_mask[:, 3] = validity["left"]
-    stream_mask[:, 4] = validity["right"]
+    stream_mask[:, 1] = validity["left"] & language_validity["left"]
+    stream_mask[:, 2] = validity["right"] & language_validity["right"]
+    stream_mask[:, 3] = validity["left"] & language_validity["left"]
+    stream_mask[:, 4] = validity["right"] & language_validity["right"]
     if left_mano_policy == "mask":
         # Translation/fingertips remain available for adapter diagnostics, but root rotation and
         # articulation are not yet a validated side-specific physical representation. The v1
@@ -184,7 +233,6 @@ def canonicalize_vitra_episode(
     intrinsics = torch.tensor([normalized_fx, normalized_fy, normalized_cx, normalized_cy])
     intrinsics_normalized = True
 
-    combined_text, text_left, text_right = _select_text(episode, anchor_index)
     query_stream_mask = torch.ones(len(future_indices), 5, dtype=torch.bool)
     if left_mano_policy == "mask":
         query_stream_mask[:, 1] = False
@@ -206,6 +254,20 @@ def canonicalize_vitra_episode(
             (fingertips["left"][history_length:], fingertips["right"][history_length:]),
             dim=1,
         ),
+        "history_hand_joints_local": torch.stack(
+            (
+                hand_joints_local["left"][:history_length],
+                hand_joints_local["right"][:history_length],
+            ),
+            dim=1,
+        ),
+        "future_hand_joints_local": torch.stack(
+            (
+                hand_joints_local["left"][history_length:],
+                hand_joints_local["right"][history_length:],
+            ),
+            dim=1,
+        ),
         "text": combined_text,
         "intrinsics": intrinsics.float(),
         "metadata": {
@@ -217,8 +279,14 @@ def canonicalize_vitra_episode(
             "left_mano_policy": left_mano_policy,
             "intrinsics_normalized": intrinsics_normalized,
             "intrinsics_source": intrinsics_source,
-            "text_left": text_left,
-            "text_right": text_right,
+            "text_left": side_text["left"],
+            "text_right": side_text["right"],
+            "text_interval_left": side_interval["left"],
+            "text_interval_right": side_interval["right"],
+            "history_language_mask_left": language_validity["left"][:history_length].tolist(),
+            "history_language_mask_right": language_validity["right"][:history_length].tolist(),
+            "future_language_mask_left": language_validity["left"][history_length:].tolist(),
+            "future_language_mask_right": language_validity["right"][history_length:].tolist(),
             "beta_left": np.asarray(episode["left"]["beta"]).tolist(),
             "beta_right": np.asarray(episode["right"]["beta"]).tolist(),
         },

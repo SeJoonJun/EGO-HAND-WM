@@ -21,8 +21,8 @@ from typing import Any, Iterable, Iterator
 import numpy as np
 
 
-FEATURE_SCHEMA_VERSION = 1
-FEATURE_CONTRACT = "ego_hand_wm.vitra_pooled_visual_features"
+FEATURE_SCHEMA_VERSION = 2
+FEATURE_CONTRACT = "ego_hand_wm.vitra_spatial_visual_features"
 ROLE_CAPABILITIES = ("context", "future_target")
 
 
@@ -70,6 +70,10 @@ class EpisodeFeatureRecord:
 
     @property
     def feature_dim(self) -> int:
+        return int(self.pooled_features.shape[2])
+
+    @property
+    def spatial_tokens(self) -> int:
         return int(self.pooled_features.shape[1])
 
     def validate(self) -> None:
@@ -99,8 +103,13 @@ class EpisodeFeatureRecord:
             raise FeatureShardError("frame_times_seconds must be floating [T]")
         if not np.isfinite(times).all() or np.any(np.diff(times.astype(np.float64)) <= 0):
             raise FeatureShardError("frame_times_seconds must be finite and strictly increasing")
-        if features.ndim != 2 or features.shape[0] != len(frame_ids) or features.shape[1] <= 0:
-            raise FeatureShardError("pooled_features must be [T,D] with D > 0")
+        if (
+            features.ndim != 3
+            or features.shape[0] != len(frame_ids)
+            or features.shape[1] <= 0
+            or features.shape[2] <= 0
+        ):
+            raise FeatureShardError("pooled_features must be [T,P,D] with P,D > 0")
         if not np.issubdtype(features.dtype, np.floating) or not np.isfinite(features).all():
             raise FeatureShardError("pooled_features must contain finite floating-point values")
         if valid.shape != frame_ids.shape or valid.dtype != np.bool_:
@@ -307,6 +316,7 @@ def finalize_feature_root(
     records: list[dict[str, Any]] = []
     extractor_ids: set[str] = set()
     feature_dims: set[int] = set()
+    spatial_token_counts: set[int] = set()
     total_episodes = 0
     for annotation_shard in sorted(shards):
         feature_path, manifest_path = feature_shard_paths(root, annotation_shard)
@@ -323,6 +333,7 @@ def finalize_feature_root(
             raise FeatureShardError(f"Feature shard missing or changed: {feature_path}")
         extractor_ids.add(str(manifest["extractor_id"]))
         feature_dims.add(int(manifest["feature_dim"]))
+        spatial_token_counts.add(int(manifest["spatial_tokens"]))
         episode_count = int(manifest["episode_count"])
         total_episodes += episode_count
         records.append(
@@ -333,9 +344,9 @@ def finalize_feature_root(
                 "episodes": episode_count,
             }
         )
-    if len(extractor_ids) != 1 or len(feature_dims) != 1:
+    if len(extractor_ids) != 1 or len(feature_dims) != 1 or len(spatial_token_counts) != 1:
         raise FeatureShardError(
-            "All feature shards must use exactly one extractor and feature dimension"
+            "All feature shards must use exactly one extractor, feature dimension, and grid"
         )
 
     success = {
@@ -345,6 +356,7 @@ def finalize_feature_root(
         "role_capabilities": list(ROLE_CAPABILITIES),
         "extractor_id": next(iter(extractor_ids)),
         "feature_dim": next(iter(feature_dims)),
+        "spatial_tokens": next(iter(spatial_token_counts)),
         "annotation_shards": len(shards),
         "episodes": total_episodes,
         "records": records,

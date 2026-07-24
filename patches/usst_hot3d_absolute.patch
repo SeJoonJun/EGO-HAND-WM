@@ -1,0 +1,439 @@
+diff --git a/mod/config/adapted/hot3d_clips_h6_k16_res18_3d_absolute.yml b/mod/config/adapted/hot3d_clips_h6_k16_res18_3d_absolute.yml
+new file mode 100644
+index 0000000..1212c40
+--- /dev/null
++++ b/mod/config/adapted/hot3d_clips_h6_k16_res18_3d_absolute.yml
+@@ -0,0 +1,76 @@
++# Controlled public HOT3D-Clips benchmark. This is not the hidden official test.
++DATA:
++  data_path: /projects/torresani-lab/sejoon/datasets/HOT3D-Clips
++  dataset: HOT3DClips
++  manifests:
++    train: /home/jun.se/EGO-HAND-WM/data/hot3d_clips_h6_k16/hot3d_clips_aria_train_h6_k16.jsonl
++    validation: /home/jun.se/EGO-HAND-WM/data/hot3d_clips_h6_k16/hot3d_clips_aria_validation_h6_k16.jsonl
++    test: /home/jun.se/EGO-HAND-WM/data/hot3d_clips_h6_k16/hot3d_clips_aria_test_h6_k16.jsonl
++  camera_stream: 214-1
++  transform:
++    input_size: [64, 64]
++    means: [0.5, 0.5, 0.5]
++    stds: [0.5, 0.5, 0.5]
++  max_frames: 22
++  history_steps: 6
++  load_all: False
++MODEL:
++  arch: TransformerSSM
++  backbone: resnet18
++  freeze_backbone: True
++  sparse_observed_rgb: True
++  vpt:
++    num_tokens: 5
++  ssm:
++    h_dim: 128
++    z_dim: 16
++    pred_link: True
++  feat_dim: 256
++  loc_dim: 256
++  modalities: ['rgb', 'loc']
++  target: 3d
++  sup_obs: False
++  trajectory_normalization: xyz_standardize
++  xyz_mean: [0.2704353097511446, -0.06219469197952073, 0.3184789241289701]
++  xyz_std: [0.11184064967022754, 0.1866135967844919, 0.10673271771077786]
++  centralize: False
++  output_activation: linear
++  residual_to_last_observation: False
++  zero_initialize_residual: False
++  use_odom: True
++  use_anchor: True
++  pred_velocity: False
++TRAIN:
++  require_beat_persistence: False
++  batch_size: 128
++  num_ratios: 1
++  ratios: [0.2727272727272727]
++  loss:
++    type: CoordLoss
++    function: Huber
++    delta: 1.0
++    scale: 1.0
++    robust_weighing: False
++    velo_coeff: 0.0
++    velo_warp: 0.0
++  base_lr: 0.0001
++  optimizer: Adam
++  weight_decay: 0
++  scheduler:
++    type: cosine_warmup
++    warmup_epoch: 1
++    lr_decay: 0.5
++    lr_decay_epoch: []
++    num_restarts: 0
++    min_lr_factor: 0.001
++  epoch: 200
++  eval_interval: 1
++  snapshot_interval: 20
++  snapshot_prefix: usst_hot3d_absolute_
++TEST:
++  batch_size: 128
++  ratios: [0.2727272727272727]
++  test_epoch: null
++  eval_space: 3d
++seed: 0
++output_dir: /projects/torresani-lab/sejoon/runs/baselines/USST
+diff --git a/mod/src/H6K16ManifestLoader.py b/mod/src/H6K16ManifestLoader.py
+new file mode 100644
+index 0000000..ac4c1e0
+--- /dev/null
++++ b/mod/src/H6K16ManifestLoader.py
+@@ -0,0 +1,193 @@
++"""Absolute-XYZ H6/K16 manifest loader for controlled HOT3D-Clips runs."""
++
++from __future__ import annotations
++
++import json
++import multiprocessing
++import os
++import sys
++from pathlib import Path
++
++import numpy as np
++import torch
++from torch.utils.data import DataLoader, Dataset
++
++
++EGO_HAND_WM_SRC = Path(
++    os.environ.get("EGO_HAND_WM_SRC", "/home/jun.se/EGO-HAND-WM/src")
++)
++if str(EGO_HAND_WM_SRC) not in sys.path:
++    sys.path.insert(0, str(EGO_HAND_WM_SRC))
++
++from ego_hand_wm.contracts.schema import SCHEMA
++from ego_hand_wm.data.adapters.hot3d_clips import canonicalize_hot3d_clip_window
++from ego_hand_wm.geometry.se3 import pose9_to_matrix
++
++
++HISTORY_STEPS = 6
++FUTURE_STEPS = 16
++TOTAL_STEPS = HISTORY_STEPS + FUTURE_STEPS
++
++
++def standardize_xyz(trajectory, mean, std):
++    value = np.asarray(trajectory, dtype=np.float32)
++    return (
++        (value - np.asarray(mean, dtype=np.float32))
++        / np.asarray(std, dtype=np.float32)
++    ).astype(np.float32)
++
++
++def metric_xyz(trajectory, mean, std):
++    value = np.asarray(trajectory, dtype=np.float32)
++    return (
++        value * np.asarray(std, dtype=np.float32)
++        + np.asarray(mean, dtype=np.float32)
++    ).astype(np.float32)
++
++
++class H6K16ManifestDataset(Dataset):
++    """Read public HOT3D tar windows as absolute anchor-camera XYZ targets."""
++
++    def __init__(
++        self,
++        manifest,
++        *,
++        input_size,
++        means,
++        stds,
++        xyz_mean,
++        xyz_std,
++        camera_stream="214-1",
++    ):
++        self.manifest = Path(manifest)
++        self.records = [
++            json.loads(line)
++            for line in self.manifest.read_text(encoding="utf-8").splitlines()
++            if line.strip()
++        ]
++        if not self.records:
++            raise ValueError(f"Empty H6/K16 manifest: {self.manifest}")
++        self.input_size = int(input_size)
++        self.means = torch.tensor(means, dtype=torch.float32).view(1, 3, 1, 1)
++        self.stds = torch.tensor(stds, dtype=torch.float32).view(1, 3, 1, 1)
++        self.xyz_mean = tuple(float(value) for value in xyz_mean)
++        self.xyz_std = tuple(float(value) for value in xyz_std)
++        self.camera_stream = str(camera_stream)
++        for record in self.records:
++            if record.get("dataset") != "hot3d_clips_aria":
++                raise ValueError(
++                    f"HOT3D manifest loader received {record.get('dataset')!r}"
++                )
++            if record.get("protocol") != "h6_k16_30hz":
++                raise ValueError(f"Unsupported protocol: {record.get('sample_id')}")
++
++    def __len__(self):
++        return len(self.records)
++
++    def __getitem__(self, index):
++        record = self.records[index]
++        sample = canonicalize_hot3d_clip_window(
++            record["tar_path"],
++            record["history_indices"],
++            record["future_indices"],
++            record["history_time_seconds"],
++            record["future_time_seconds"],
++            tracked_hand=record["tracked_hand"],
++            camera_stream=str(record.get("camera_stream", self.camera_stream)),
++            anchor="last_observed",
++            wrist_target="xyz",
++            decode_rgb=True,
++            image_size=self.input_size,
++            rotate_clockwise=True,
++        )
++        state = torch.cat((sample["history_state"], sample["future_state"]), dim=0)
++        wrist_slice = (
++            SCHEMA.left_wrist
++            if record["tracked_hand"] == "left"
++            else SCHEMA.right_wrist
++        )
++        trajectory_metric = (
++            state[:, wrist_slice.start : wrist_slice.start + 3]
++            .cpu()
++            .numpy()
++            .astype(np.float32)
++        )
++        trajectory_model = standardize_xyz(
++            trajectory_metric, self.xyz_mean, self.xyz_std
++        )
++        camera = pose9_to_matrix(state[:, SCHEMA.camera]).float()
++
++        observed_images = sample["context_images"].float()
++        observed_images = (observed_images - self.means) / self.stds
++        clip = torch.zeros(
++            3,
++            TOTAL_STEPS,
++            self.input_size,
++            self.input_size,
++            dtype=torch.float32,
++        )
++        clip[:, :HISTORY_STEPS] = observed_images.permute(1, 0, 2, 3)
++        return (
++            str(record["sample_id"]),
++            clip,
++            camera,
++            torch.tensor(TOTAL_STEPS, dtype=torch.long),
++            torch.from_numpy(trajectory_model),
++        )
++
++
++def _loader(dataset, *, batch_size, shuffle, num_workers):
++    options = {
++        "dataset": dataset,
++        "batch_size": int(batch_size),
++        "shuffle": bool(shuffle),
++        "num_workers": int(num_workers),
++        "pin_memory": True,
++    }
++    if num_workers > 0:
++        options.update(
++            multiprocessing_context="spawn",
++            persistent_workers=True,
++            prefetch_factor=2,
++        )
++    return DataLoader(**options)
++
++
++def build_dataloaders(cfg, phase="trainval"):
++    def dataset(split):
++        return H6K16ManifestDataset(
++            cfg.DATA.manifests[split],
++            input_size=int(cfg.DATA.transform.input_size[0]),
++            means=tuple(cfg.DATA.transform.means),
++            stds=tuple(cfg.DATA.transform.stds),
++            xyz_mean=tuple(cfg.MODEL.xyz_mean),
++            xyz_std=tuple(cfg.MODEL.xyz_std),
++            camera_stream=str(getattr(cfg.DATA, "camera_stream", "214-1")),
++        )
++
++    if phase == "trainval":
++        trainset = dataset("train")
++        valset = dataset("validation")
++        print(f"Number of train/val: {len(trainset)}/{len(valset)}")
++        return (
++            _loader(
++                trainset,
++                batch_size=cfg.TRAIN.batch_size,
++                shuffle=True,
++                num_workers=cfg.num_workers,
++            ),
++            _loader(
++                valset,
++                batch_size=cfg.TEST.batch_size,
++                shuffle=False,
++                num_workers=cfg.num_workers,
++            ),
++        )
++    testset = dataset("test")
++    print(f"Number of test samples: {len(testset)}")
++    return _loader(
++        testset,
++        batch_size=cfg.TEST.batch_size,
++        shuffle=False,
++        num_workers=cfg.num_workers,
++    )
+diff --git a/mod/test_hot3d.py b/mod/test_hot3d.py
+new file mode 100644
+index 0000000..3786945
+--- /dev/null
++++ b/mod/test_hot3d.py
+@@ -0,0 +1,73 @@
++#!/usr/bin/env python3
++"""Evaluate absolute-output USST on controlled public HOT3D-Clips."""
++
++from __future__ import annotations
++
++import importlib
++import json
++from pathlib import Path
++
++import numpy as np
++import torch
++
++from src.H6K16ManifestLoader import build_dataloaders
++from src.config import parse_configs
++from src.runtime import run_test
++from src.utils import compute_block_distances, compute_displacement_errors, set_deterministic
++from src.utils_io import load_checkpoint, print_de_table, print_delta_table
++
++
++def main():
++    cfg = parse_configs(phase="test")
++    if str(cfg.DATA.dataset) != "HOT3DClips":
++        raise ValueError("test_hot3d.py requires DATA.dataset=HOT3DClips")
++    set_deterministic(cfg.seed)
++    loader = build_dataloaders(cfg, phase="test")
++    model_module = importlib.import_module(f"src.models.{cfg.MODEL.arch}")
++    model = getattr(model_module, cfg.MODEL.arch)(
++        cfg.MODEL,
++        seq_len=cfg.DATA.max_frames,
++        input_size=cfg.DATA.transform.input_size[0],
++    ).to(cfg.device)
++    model, test_epoch = load_checkpoint(cfg, model)
++    model.eval()
++
++    result_path = (
++        Path(cfg.output_dir) / cfg.DATA.dataset / cfg.tag / f"test-e{test_epoch}"
++    )
++    result_path.mkdir(parents=True, exist_ok=True)
++    result_file = result_path / "test_results.npz"
++    if result_file.exists():
++        payload = np.load(result_file, allow_pickle=True)
++        predictions, targets = payload["pred"][()], payload["gt"][()]
++    else:
++        with torch.no_grad():
++            predictions, targets = run_test(cfg, model, loader)
++        np.savez(result_file, pred=predictions, gt=targets)
++
++    ades, fdes = compute_displacement_errors(
++        predictions, targets, target=model.target, eval_space="3d"
++    )
++    dxs, dys, dzs = compute_block_distances(
++        predictions, targets, target=model.target, eval_space="3d"
++    )
++    metrics = {
++        "ade_3d_m": float(np.mean(list(ades.values()))),
++        "fde_3d_m": float(np.mean(list(fdes.values()))),
++        "evaluated_examples": int(
++            sum(len(value) for value in predictions.values())
++        ),
++        "output_parameterization": "absolute_xyz",
++        "official_hidden_test": False,
++    }
++    print_de_table(ades, fdes, subset="Controlled test")
++    print_delta_table(dxs, dys, dzs, subset="Controlled test")
++    (result_path / "paired_metrics.json").write_text(
++        json.dumps(metrics, indent=2, sort_keys=True) + "\n",
++        encoding="utf-8",
++    )
++    print(json.dumps(metrics, indent=2, sort_keys=True))
++
++
++if __name__ == "__main__":
++    main()
+diff --git a/mod/tests/test_hot3d_manifest_loader.py b/mod/tests/test_hot3d_manifest_loader.py
+new file mode 100644
+index 0000000..83e795f
+--- /dev/null
++++ b/mod/tests/test_hot3d_manifest_loader.py
+@@ -0,0 +1,46 @@
++from pathlib import Path
++
++import numpy as np
++
++from src.H6K16ManifestLoader import H6K16ManifestDataset, metric_xyz, standardize_xyz
++
++
++MEAN = (0.2704353097511446, -0.06219469197952073, 0.3184789241289701)
++STD = (0.11184064967022754, 0.1866135967844919, 0.10673271771077786)
++
++
++def test_hot3d_xyz_standardization_is_absolute_and_reversible():
++    xyz = np.asarray(
++        [[0.2, -0.1, 0.3], [0.4, 0.2, 0.5], [-0.2, -0.4, 0.1]],
++        dtype=np.float32,
++    )
++    np.testing.assert_allclose(
++        metric_xyz(standardize_xyz(xyz, MEAN, STD), MEAN, STD),
++        xyz,
++        rtol=1e-6,
++        atol=1e-6,
++    )
++
++
++def test_real_hot3d_window_decodes_absolute_xyz_and_rgb():
++    manifest = Path(
++        "/home/jun.se/EGO-HAND-WM/data/hot3d_clips_h6_k16/"
++        "hot3d_clips_aria_train_h6_k16.jsonl"
++    )
++    if not manifest.exists():
++        return
++    dataset = H6K16ManifestDataset(
++        manifest,
++        input_size=64,
++        means=(0.5, 0.5, 0.5),
++        stds=(0.5, 0.5, 0.5),
++        xyz_mean=MEAN,
++        xyz_std=STD,
++    )
++    sample_id, clip, camera, nframes, trajectory = dataset[0]
++    assert sample_id.startswith("hot3d:")
++    assert tuple(clip.shape) == (3, 22, 64, 64)
++    assert tuple(camera.shape) == (22, 4, 4)
++    assert int(nframes) == 22
++    assert tuple(trajectory.shape) == (22, 3)
++    assert np.isfinite(trajectory.numpy()).all()
+diff --git a/base/train.py b/mod/train.py
+index c4da721..d0a9018 100755
+--- a/base/train.py
++++ b/mod/train.py
+@@ -22,7 +22,8 @@ from tensorboardX import SummaryWriter
+ import importlib
+ 
+ from src.config import parse_configs
+-from src.EgoPAT3DLoader import build_dataloaders
++from src.EgoPAT3DLoader import build_dataloaders as build_egopat3d_dataloaders
++from src.H6K16ManifestLoader import build_dataloaders as build_manifest_dataloaders
+ from src.utils import (
+     atomic_torch_save,
+     compute_displacement_errors,
+@@ -35,6 +36,12 @@ import src.Losses as loss_module
+ from src.optimizers import get_optimizer, get_scheduler
+ 
+ 
++def build_dataloaders(cfg, phase):
++    if str(cfg.DATA.dataset) == "HOT3DClips":
++        return build_manifest_dataloaders(cfg, phase=phase)
++    return build_egopat3d_dataloaders(cfg, phase=phase)
++
++
+ 
+ def train(cfg):
+     # model snapshots

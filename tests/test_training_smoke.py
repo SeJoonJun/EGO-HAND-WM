@@ -6,7 +6,7 @@ from ego_hand_wm.training.engine import run_training
 
 
 def test_one_step_training(tmp_path: Path) -> None:
-    root = Path("/n/home08/sjmathy/EGO-HAND-WM")
+    root = Path(__file__).resolve().parents[1]
     config = yaml.safe_load((root / "configs/smoke.yaml").read_text())
     config["model"]["hidden_dim"] = 32
     config["model"]["heads"] = 4
@@ -18,4 +18,3 @@ def test_one_step_training(tmp_path: Path) -> None:
     result = run_training(config)
     assert result["step"] == 1
     assert (tmp_path / "run/last.pt").is_file()
-

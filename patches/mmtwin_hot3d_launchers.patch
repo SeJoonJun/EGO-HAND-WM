@@ -1,0 +1,147 @@
+diff --git a/mod/slurm/eval_hot3d_absolute.sbatch b/mod/slurm/eval_hot3d_absolute.sbatch
+new file mode 100644
+index 0000000..4440369
+--- /dev/null
++++ b/mod/slurm/eval_hot3d_absolute.sbatch
+@@ -0,0 +1,43 @@
++#!/usr/bin/env bash
++#SBATCH --job-name=mmtwin-hot3d-eval
++#SBATCH --account=l.torresani
++#SBATCH --partition=torresani-lab
++#SBATCH --nodes=1
++#SBATCH --ntasks=1
++#SBATCH --cpus-per-task=8
++#SBATCH --mem=192G
++#SBATCH --gres=gpu:h200:1
++#SBATCH --time=08:00:00
++#SBATCH --output=/home/jun.se/EGO-HAND-WM-REF/MMTwin/logs/%x-%j.out
++#SBATCH --error=/home/jun.se/EGO-HAND-WM-REF/MMTwin/logs/%x-%j.err
++
++set -euo pipefail
++
++REPO=/home/jun.se/EGO-HAND-WM-REF/MMTwin
++PYTHON=/projects/torresani-lab/sejoon/miniconda3/envs/mmtwin-h6k16/bin/python
++MANIFESTS=/home/jun.se/EGO-HAND-WM/data/hot3d_clips_h6_k16
++OUTPUT=/projects/torresani-lab/sejoon/runs/baselines/MMTwin/hot3d-h6k16-absolute-seed0
++BEST="$OUTPUT/best.pt"
++METRICS="$OUTPUT/metrics-test-n1.json"
++
++if [[ ! -s "$BEST" ]]; then
++  echo "Missing best-validation checkpoint: $BEST" >&2
++  exit 3
++fi
++
++cd "$REPO"
++exec "$PYTHON" -u traineval_h6k16.py \
++  --train-manifest "$MANIFESTS/hot3d_clips_aria_train_h6_k16.jsonl" \
++  --val-manifest "$MANIFESTS/hot3d_clips_aria_validation_h6_k16.jsonl" \
++  --eval-manifest "$MANIFESTS/hot3d_clips_aria_test_h6_k16.jsonl" \
++  --output-dir "$OUTPUT" \
++  --metrics-output "$METRICS" \
++  --resume "$BEST" \
++  --evaluate-only \
++  --eval-timestep-respacing 200 \
++  --num-samples 1 \
++  --sample-gap 1 \
++  --vision-repo /home/jun.se/EGO-HAND-WM-REF/dinov3 \
++  --vision-checkpoint /projects/torresani-lab/sejoon/checkpoints/dinov3/dinov3_vitl16_pretrain_lvd1689m-8aa4cbdd.pth \
++  --batch-size 8 \
++  --workers 8
+diff --git a/mod/slurm/smoke_hot3d_absolute.sbatch b/mod/slurm/smoke_hot3d_absolute.sbatch
+new file mode 100644
+index 0000000..0b08a44
+--- /dev/null
++++ b/mod/slurm/smoke_hot3d_absolute.sbatch
+@@ -0,0 +1,38 @@
++#!/usr/bin/env bash
++#SBATCH --job-name=mmtwin-hot3d-smoke
++#SBATCH --account=l.torresani
++#SBATCH --partition=torresani-lab
++#SBATCH --nodes=1
++#SBATCH --ntasks=1
++#SBATCH --cpus-per-task=8
++#SBATCH --mem=96G
++#SBATCH --gres=gpu:h200:1
++#SBATCH --time=00:30:00
++#SBATCH --output=/home/jun.se/EGO-HAND-WM-REF/MMTwin/logs/%x-%j.out
++#SBATCH --error=/home/jun.se/EGO-HAND-WM-REF/MMTwin/logs/%x-%j.err
++
++set -euo pipefail
++
++REPO=/home/jun.se/EGO-HAND-WM-REF/MMTwin
++PYTHON=/projects/torresani-lab/sejoon/miniconda3/envs/mmtwin-h6k16/bin/python
++MANIFESTS=/home/jun.se/EGO-HAND-WM/data/hot3d_clips_h6_k16
++OUTPUT=/scratch/jun.se/EGO-HAND-WM/smoke/mmtwin-hot3d-absolute
++
++cd "$REPO"
++exec "$PYTHON" -u traineval_h6k16.py \
++  --train-manifest "$MANIFESTS/hot3d_clips_aria_train_h6_k16.jsonl" \
++  --val-manifest "$MANIFESTS/hot3d_clips_aria_validation_h6_k16.jsonl" \
++  --eval-manifest "$MANIFESTS/hot3d_clips_aria_test_h6_k16.jsonl" \
++  --output-dir "$OUTPUT" \
++  --output-parameterization absolute \
++  --vision-model dinov3_vitl16 \
++  --vision-repo /home/jun.se/EGO-HAND-WM-REF/dinov3 \
++  --vision-checkpoint /projects/torresani-lab/sejoon/checkpoints/dinov3/dinov3_vitl16_pretrain_lvd1689m-8aa4cbdd.pth \
++  --batch-size 4 \
++  --workers 4 \
++  --epochs 1 \
++  --max-train-batches 2 \
++  --validation-batches 2 \
++  --metric-batches 1 \
++  --validation-timestep-respacing 2 \
++  --skip-checkpoint-save
+diff --git a/mod/slurm/train_hot3d_absolute.sbatch b/mod/slurm/train_hot3d_absolute.sbatch
+new file mode 100644
+index 0000000..d03d409
+--- /dev/null
++++ b/mod/slurm/train_hot3d_absolute.sbatch
+@@ -0,0 +1,48 @@
++#!/usr/bin/env bash
++#SBATCH --job-name=mmtwin-hot3d-train
++#SBATCH --account=l.torresani
++#SBATCH --partition=torresani-lab
++#SBATCH --nodes=1
++#SBATCH --ntasks=1
++#SBATCH --cpus-per-task=16
++#SBATCH --mem=256G
++#SBATCH --gres=gpu:h200:2
++#SBATCH --time=1-00:00:00
++#SBATCH --output=/home/jun.se/EGO-HAND-WM-REF/MMTwin/logs/%x-%j.out
++#SBATCH --error=/home/jun.se/EGO-HAND-WM-REF/MMTwin/logs/%x-%j.err
++
++set -euo pipefail
++
++REPO=/home/jun.se/EGO-HAND-WM-REF/MMTwin
++PYTHON=/projects/torresani-lab/sejoon/miniconda3/envs/mmtwin-h6k16/bin/python
++MANIFESTS=/home/jun.se/EGO-HAND-WM/data/hot3d_clips_h6_k16
++OUTPUT=/projects/torresani-lab/sejoon/runs/baselines/MMTwin/hot3d-h6k16-absolute-seed0
++LAST="$OUTPUT/last.pt"
++
++cd "$REPO"
++args=(
++  --train-manifest "$MANIFESTS/hot3d_clips_aria_train_h6_k16.jsonl"
++  --val-manifest "$MANIFESTS/hot3d_clips_aria_validation_h6_k16.jsonl"
++  --eval-manifest "$MANIFESTS/hot3d_clips_aria_test_h6_k16.jsonl"
++  --output-dir "$OUTPUT"
++  --output-parameterization absolute
++  --vision-model dinov3_vitl16
++  --vision-repo /home/jun.se/EGO-HAND-WM-REF/dinov3
++  --vision-checkpoint /projects/torresani-lab/sejoon/checkpoints/dinov3/dinov3_vitl16_pretrain_lvd1689m-8aa4cbdd.pth
++  --batch-size 8
++  --workers 8
++  --epochs 30
++  --learning-rate 0.0001
++  --warmup-ratio 0.03
++  --validation-batches 0
++  --metric-batches -1
++  --checkpoint-selection loss
++)
++if [[ "${NO_RESUME:-0}" != 1 && -s "$LAST" ]]; then
++  args+=(--resume "$LAST")
++fi
++exec "$PYTHON" -m torch.distributed.run \
++  --standalone \
++  --nproc_per_node=2 \
++  traineval_h6k16.py \
++  "${args[@]}"

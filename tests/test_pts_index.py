@@ -7,7 +7,7 @@ from pathlib import Path
 import numpy as np
 
 
-SCRIPT = Path("/n/home08/sjmathy/EGO-HAND-WM/scripts/build_video_pts_index.py")
+SCRIPT = Path(__file__).resolve().parents[1] / "scripts/build_video_pts_index.py"
 SPEC = importlib.util.spec_from_file_location("build_video_pts_index", SCRIPT)
 assert SPEC is not None and SPEC.loader is not None
 pts_index = importlib.util.module_from_spec(SPEC)
@@ -37,6 +37,20 @@ def test_discovery_is_case_insensitive_and_partition_is_exact(tmp_path: Path) ->
     flattened = partitions[0] + partitions[1]
     assert sorted(flattened) == expected
     assert set(partitions[0]).isdisjoint(partitions[1])
+
+
+def test_duplicate_pts_repair_preserves_frames_and_surrounding_times() -> None:
+    tick = 1.0 / 90_000.0
+    source = np.asarray([0.0, 1.0 / 30.0, 1.0 / 30.0, 2.0 / 30.0])
+
+    repaired = pts_index._repair_duplicate_timestamps(source, minimum_step=tick)
+
+    assert len(repaired) == len(source)
+    assert np.all(np.diff(repaired) > 0)
+    assert repaired[0] == source[0]
+    assert repaired[1] == source[1]
+    assert repaired[2] == source[2] + tick
+    assert repaired[3] == source[3]
 
 
 def test_cache_skip_requires_matching_metadata_and_source_fingerprint(tmp_path: Path) -> None:

@@ -1,0 +1,195 @@
+diff --git a/base/handsonvlm/evaluation/evaluate_h6k16.py b/mod/handsonvlm/evaluation/evaluate_h6k16.py
+index f004f07..7fefb29 100644
+--- a/base/handsonvlm/evaluation/evaluate_h6k16.py
++++ b/mod/handsonvlm/evaluation/evaluate_h6k16.py
+@@ -1,5 +1,5 @@
+ #!/usr/bin/env python3
+-"""Evaluate adapted HandsOnVLM on a complete H2O/EgoPAT3D manifest."""
++"""Evaluate adapted HandsOnVLM on one complete H6/K16 manifest."""
+ 
+ from __future__ import annotations
+ 
+@@ -77,7 +77,12 @@ def main() -> None:
+     torch.manual_seed(args.seed)
+     torch.cuda.manual_seed_all(args.seed)
+ 
+-    sums = {key: 0.0 for key in ("ade_3d_m", "fde_3d_m", "ade_2d_norm", "fde_2d_norm")}
++    dataset_name = dataset.dataset_name
++    report_projective = dataset_name in PROJECTIVE
++    metric_names = ["ade_3d_m", "fde_3d_m"]
++    if report_projective:
++        metric_names.extend(("ade_2d_norm", "fde_2d_norm"))
++    sums = {key: 0.0 for key in metric_names}
+     count = 0
+     predictions_out = []
+     targets_out = []
+@@ -116,16 +121,20 @@ def main() -> None:
+             for local_index in range(target.shape[0]):
+                 if args.max_examples and count >= args.max_examples:
+                     break
+-                dataset_name = dataset.records[count]["dataset"]
+-                target_2d = project_normalized(target[local_index], dataset_name)
+-                prediction_2d = project_normalized(best[local_index], dataset_name)
+-                distance_2d = torch.linalg.vector_norm(
+-                    prediction_2d - target_2d, dim=-1
+-                )
+                 sums["ade_3d_m"] += float(best_distance[local_index].mean())
+                 sums["fde_3d_m"] += float(best_distance[local_index, -1])
+-                sums["ade_2d_norm"] += float(distance_2d.mean())
+-                sums["fde_2d_norm"] += float(distance_2d[-1])
++                if report_projective:
++                    target_2d = project_normalized(
++                        target[local_index], dataset_name
++                    )
++                    prediction_2d = project_normalized(
++                        best[local_index], dataset_name
++                    )
++                    distance_2d = torch.linalg.vector_norm(
++                        prediction_2d - target_2d, dim=-1
++                    )
++                    sums["ade_2d_norm"] += float(distance_2d.mean())
++                    sums["fde_2d_norm"] += float(distance_2d[-1])
+                 predictions_out.append(best[local_index].float().cpu().numpy())
+                 targets_out.append(target[local_index].float().cpu().numpy())
+                 count += 1
+@@ -138,6 +147,9 @@ def main() -> None:
+         sample_selection=(
+             "single_prior_sample" if args.num_samples == 1 else "oracle_min_ade"
+         ),
++        dataset=dataset_name,
++        projective_metrics=report_projective,
++        output_parameterization="absolute_xyz",
+     )
+     args.output.parent.mkdir(parents=True, exist_ok=True)
+     np.savez_compressed(
+diff --git a/mod/slurm/eval_hot3d_absolute.sbatch b/mod/slurm/eval_hot3d_absolute.sbatch
+new file mode 100644
+index 0000000..edd12c5
+--- /dev/null
++++ b/mod/slurm/eval_hot3d_absolute.sbatch
+@@ -0,0 +1,39 @@
++#!/usr/bin/env bash
++#SBATCH --job-name=hovlm-hot3d-eval
++#SBATCH --account=l.torresani
++#SBATCH --partition=torresani-lab
++#SBATCH --nodes=1
++#SBATCH --ntasks=1
++#SBATCH --cpus-per-task=8
++#SBATCH --mem=192G
++#SBATCH --gres=gpu:h200:1
++#SBATCH --time=08:00:00
++#SBATCH --output=/home/jun.se/EGO-HAND-WM-REF/HandsOnVLM-release/logs/%x-%j.out
++#SBATCH --error=/home/jun.se/EGO-HAND-WM-REF/HandsOnVLM-release/logs/%x-%j.err
++
++set -euo pipefail
++
++REPO=/home/jun.se/EGO-HAND-WM-REF/HandsOnVLM-release
++ENV=/projects/torresani-lab/sejoon/miniconda3/envs/handsonvlm-h6k16
++MANIFEST=/home/jun.se/EGO-HAND-WM/data/hot3d_clips_h6_k16/hot3d_clips_aria_test_h6_k16.jsonl
++CHECKPOINT=/projects/torresani-lab/sejoon/runs/baselines/HandsOnVLM/hot3d-h6k16-absolute-seed0
++OUTPUT=/projects/torresani-lab/sejoon/runs/baselines/HandsOnVLM/hot3d-h6k16-absolute-seed0/test-n1.npz
++
++if [[ ! -s "$CHECKPOINT/config.json" ]]; then
++  echo "Missing promoted best-validation checkpoint: $CHECKPOINT" >&2
++  exit 3
++fi
++
++export PATH="$ENV/bin:$PATH"
++export PYTHONPATH="$REPO${PYTHONPATH:+:$PYTHONPATH}"
++export TRANSFORMERS_OFFLINE=1 HF_HUB_OFFLINE=1 TOKENIZERS_PARALLELISM=false
++
++cd "$REPO"
++exec "$ENV/bin/python" -u handsonvlm/evaluation/evaluate_h6k16.py \
++  --checkpoint "$CHECKPOINT" \
++  --manifest "$MANIFEST" \
++  --output "$OUTPUT" \
++  --batch-size 1 \
++  --workers 4 \
++  --num-samples 1 \
++  --seed 0
+diff --git a/mod/slurm/smoke_hot3d_absolute.sbatch b/mod/slurm/smoke_hot3d_absolute.sbatch
+new file mode 100644
+index 0000000..70f0941
+--- /dev/null
++++ b/mod/slurm/smoke_hot3d_absolute.sbatch
+@@ -0,0 +1,38 @@
++#!/usr/bin/env bash
++#SBATCH --job-name=hovlm-hot3d-smoke
++#SBATCH --account=l.torresani
++#SBATCH --partition=torresani-lab
++#SBATCH --nodes=1
++#SBATCH --ntasks=1
++#SBATCH --cpus-per-task=8
++#SBATCH --mem=128G
++#SBATCH --gres=gpu:h200:1
++#SBATCH --time=00:45:00
++#SBATCH --output=/home/jun.se/EGO-HAND-WM-REF/HandsOnVLM-release/logs/%x-%j.out
++#SBATCH --error=/home/jun.se/EGO-HAND-WM-REF/HandsOnVLM-release/logs/%x-%j.err
++
++set -euo pipefail
++
++REPO=/home/jun.se/EGO-HAND-WM-REF/HandsOnVLM-release
++ENV=/projects/torresani-lab/sejoon/miniconda3/envs/handsonvlm-h6k16
++MANIFESTS=/home/jun.se/EGO-HAND-WM/data/hot3d_clips_h6_k16
++
++export PATH="$ENV/bin:$PATH"
++export PYTHONPATH="$REPO${PYTHONPATH:+:$PYTHONPATH}"
++export MODEL_PATH=/projects/torresani-lab/sejoon/checkpoints/handsonvlm/handsonvlm-7b
++export VISION_TOWER=/projects/torresani-lab/sejoon/checkpoints/clip/clip-vit-large-patch14
++export MANIFEST="$MANIFESTS/hot3d_clips_aria_train_h6_k16.jsonl"
++export VAL_MANIFEST="$MANIFESTS/hot3d_clips_aria_validation_h6_k16.jsonl"
++export OUTPUT_DIR=/scratch/jun.se/EGO-HAND-WM/smoke/handsonvlm-hot3d-absolute
++export EPOCHS=1 SAMPLES_PER_EPOCH=2 BATCH_SIZE=1 GRAD_ACCUM=1
++export EVAL_BATCH_SIZE=1 WORKERS=0 WANDB_MODE=disabled
++export TRANSFORMERS_OFFLINE=1 HF_HUB_OFFLINE=1 TOKENIZERS_PARALLELISM=false
++
++cd "$REPO"
++exec bash scripts/finetune_h6k16.sh \
++  --max_steps 1 \
++  --logging_steps 1 \
++  --evaluation_strategy no \
++  --save_strategy no \
++  --load_best_model_at_end False \
++  --report_to none
+diff --git a/mod/slurm/train_hot3d_absolute.sbatch b/mod/slurm/train_hot3d_absolute.sbatch
+new file mode 100644
+index 0000000..2a50f74
+--- /dev/null
++++ b/mod/slurm/train_hot3d_absolute.sbatch
+@@ -0,0 +1,36 @@
++#!/usr/bin/env bash
++#SBATCH --job-name=hovlm-hot3d-train
++#SBATCH --account=l.torresani
++#SBATCH --partition=torresani-lab
++#SBATCH --nodes=1
++#SBATCH --ntasks=1
++#SBATCH --cpus-per-task=16
++#SBATCH --mem=384G
++#SBATCH --gres=gpu:h200:2
++#SBATCH --time=1-00:00:00
++#SBATCH --output=/home/jun.se/EGO-HAND-WM-REF/HandsOnVLM-release/logs/%x-%j.out
++#SBATCH --error=/home/jun.se/EGO-HAND-WM-REF/HandsOnVLM-release/logs/%x-%j.err
++
++set -euo pipefail
++
++REPO=/home/jun.se/EGO-HAND-WM-REF/HandsOnVLM-release
++ENV=/projects/torresani-lab/sejoon/miniconda3/envs/handsonvlm-h6k16
++MANIFESTS=/home/jun.se/EGO-HAND-WM/data/hot3d_clips_h6_k16
++
++export PATH="$ENV/bin:$PATH"
++export PYTHONPATH="$REPO${PYTHONPATH:+:$PYTHONPATH}"
++export MODEL_PATH=/projects/torresani-lab/sejoon/checkpoints/handsonvlm/handsonvlm-7b
++export VISION_TOWER=/projects/torresani-lab/sejoon/checkpoints/clip/clip-vit-large-patch14
++export MANIFEST="$MANIFESTS/hot3d_clips_aria_train_h6_k16.jsonl"
++export VAL_MANIFEST="$MANIFESTS/hot3d_clips_aria_validation_h6_k16.jsonl"
++export OUTPUT_DIR=/projects/torresani-lab/sejoon/runs/baselines/HandsOnVLM/hot3d-h6k16-absolute-seed0
++export EPOCHS=10 SAMPLES_PER_EPOCH=19062 BATCH_SIZE=1 GRAD_ACCUM=8
++export EVAL_BATCH_SIZE=2 WORKERS=4 WANDB_MODE=disabled
++export TRANSFORMERS_OFFLINE=1 HF_HUB_OFFLINE=1 TOKENIZERS_PARALLELISM=false
++
++cd "$REPO"
++exec bash scripts/finetune_h6k16.sh \
++  --logging_steps 50 \
++  --save_strategy epoch \
++  --save_total_limit 3 \
++  --report_to none

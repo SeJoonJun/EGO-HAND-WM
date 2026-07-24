@@ -1,0 +1,172 @@
+{
+  "dataset": "egopat3d",
+  "protocol": {
+    "fps": 30,
+    "future_steps": 16,
+    "history_steps": 6,
+    "persistence_residual": false,
+    "prediction_horizon_seconds": 0.5333333333333333,
+    "samples_per_context": 1,
+    "selection_data": "complete validation split only",
+    "test_evaluations_per_selected_model": 1
+  },
+  "selected": {
+    "checkpoint": "/scratch/jun.se/EGO-HAND-WM/runs/egopat3d-vitra-h6k16-trajectory-v2-iofix/best.pt",
+    "config": "configs/benchmarks/egopat3d_vitra_finetune_h6k16_trajectory_v2.yaml",
+    "initial_noise_scale": 0.0,
+    "ode_steps": 16,
+    "recipe": "fresh",
+    "validation_ade_m": 0.13074146818296406,
+    "validation_examples": 1735,
+    "validation_fde_m": 0.21480712291518875,
+    "validation_mean_ade_fde_m": 0.17277429554907642
+  },
+  "test": {
+    "test_novel": {
+      "ade_m": 0.12600358852271365,
+      "examples": 4686,
+      "fde_m": 0.21466344039227553,
+      "mean_ade_fde_m": 0.1703335144574946
+    },
+    "test_seen": {
+      "ade_m": 0.22658837326848613,
+      "examples": 3353,
+      "fde_m": 0.41454141522079146,
+      "mean_ade_fde_m": 0.3205648942446388
+    }
+  },
+  "validation_candidates": [
+    {
+      "checkpoint": "/scratch/jun.se/EGO-HAND-WM/runs/egopat3d-vitra-h6k16-trajectory-v2-iofix/best.pt",
+      "config": "configs/benchmarks/egopat3d_vitra_finetune_h6k16_trajectory_v2.yaml",
+      "initial_noise_scale": 0.0,
+      "ode_steps": 8,
+      "recipe": "fresh",
+      "validation_ade_m": 0.1309715891128771,
+      "validation_examples": 1735,
+      "validation_fde_m": 0.2155020391509495,
+      "validation_mean_ade_fde_m": 0.1732368141319133
+    },
+    {
+      "checkpoint": "/scratch/jun.se/EGO-HAND-WM/runs/egopat3d-vitra-h6k16-trajectory-v2-iofix/best.pt",
+      "config": "configs/benchmarks/egopat3d_vitra_finetune_h6k16_trajectory_v2.yaml",
+      "initial_noise_scale": 0.5,
+      "ode_steps": 8,
+      "recipe": "fresh",
+      "validation_ade_m": 0.13261153426856542,
+      "validation_examples": 1735,
+      "validation_fde_m": 0.21728719724744816,
+      "validation_mean_ade_fde_m": 0.1749493657580068
+    },
+    {
+      "checkpoint": "/scratch/jun.se/EGO-HAND-WM/runs/egopat3d-vitra-h6k16-trajectory-v2-iofix/best.pt",
+      "config": "configs/benchmarks/egopat3d_vitra_finetune_h6k16_trajectory_v2.yaml",
+      "initial_noise_scale": 1.0,
+      "ode_steps": 8,
+      "recipe": "fresh",
+      "validation_ade_m": 0.14914079892782853,
+      "validation_examples": 1735,
+      "validation_fde_m": 0.23423589209110748,
+      "validation_mean_ade_fde_m": 0.191688345509468
+    },
+    {
+      "checkpoint": "/scratch/jun.se/EGO-HAND-WM/runs/egopat3d-vitra-h6k16-trajectory-v2-iofix/best.pt",
+      "config": "configs/benchmarks/egopat3d_vitra_finetune_h6k16_trajectory_v2.yaml",
+      "initial_noise_scale": 0.0,
+      "ode_steps": 16,
+      "recipe": "fresh",
+      "validation_ade_m": 0.13074146818296406,
+      "validation_examples": 1735,
+      "validation_fde_m": 0.21480712291518875,
+      "validation_mean_ade_fde_m": 0.17277429554907642
+    },
+    {
+      "checkpoint": "/scratch/jun.se/EGO-HAND-WM/runs/egopat3d-vitra-h6k16-trajectory-v2-iofix/best.pt",
+      "config": "configs/benchmarks/egopat3d_vitra_finetune_h6k16_trajectory_v2.yaml",
+      "initial_noise_scale": 0.5,
+      "ode_steps": 16,
+      "recipe": "fresh",
+      "validation_ade_m": 0.13392274138566407,
+      "validation_examples": 1735,
+      "validation_fde_m": 0.2180087448884156,
+      "validation_mean_ade_fde_m": 0.17596574313703983
+    },
+    {
+      "checkpoint": "/scratch/jun.se/EGO-HAND-WM/runs/egopat3d-vitra-h6k16-trajectory-v2-iofix/best.pt",
+      "config": "configs/benchmarks/egopat3d_vitra_finetune_h6k16_trajectory_v2.yaml",
+      "initial_noise_scale": 1.0,
+      "ode_steps": 16,
+      "recipe": "fresh",
+      "validation_ade_m": 0.15808314843434085,
+      "validation_examples": 1735,
+      "validation_fde_m": 0.24188691429976342,
+      "validation_mean_ade_fde_m": 0.19998503136705215
+    },
+    {
+      "checkpoint": "/scratch/jun.se/EGO-HAND-WM/runs/egopat3d-vitra-h6k16-trajectory-v2-refine-iofix/best.pt",
+      "config": "configs/benchmarks/egopat3d_vitra_finetune_h6k16_trajectory_v2_refine.yaml",
+      "initial_noise_scale": 0.0,
+      "ode_steps": 8,
+      "recipe": "refine",
+      "validation_ade_m": 0.13972185852201668,
+      "validation_examples": 1735,
+      "validation_fde_m": 0.2298605059050775,
+      "validation_mean_ade_fde_m": 0.1847911822135471
+    },
+    {
+      "checkpoint": "/scratch/jun.se/EGO-HAND-WM/runs/egopat3d-vitra-h6k16-trajectory-v2-refine-iofix/best.pt",
+      "config": "configs/benchmarks/egopat3d_vitra_finetune_h6k16_trajectory_v2_refine.yaml",
+      "initial_noise_scale": 0.5,
+      "ode_steps": 8,
+      "recipe": "refine",
+      "validation_ade_m": 0.13552510643835466,
+      "validation_examples": 1735,
+      "validation_fde_m": 0.21974646301258366,
+      "validation_mean_ade_fde_m": 0.17763578472546915
+    },
+    {
+      "checkpoint": "/scratch/jun.se/EGO-HAND-WM/runs/egopat3d-vitra-h6k16-trajectory-v2-refine-iofix/best.pt",
+      "config": "configs/benchmarks/egopat3d_vitra_finetune_h6k16_trajectory_v2_refine.yaml",
+      "initial_noise_scale": 1.0,
+      "ode_steps": 8,
+      "recipe": "refine",
+      "validation_ade_m": 0.14711442636440022,
+      "validation_examples": 1735,
+      "validation_fde_m": 0.2341303666033688,
+      "validation_mean_ade_fde_m": 0.19062239648388452
+    },
+    {
+      "checkpoint": "/scratch/jun.se/EGO-HAND-WM/runs/egopat3d-vitra-h6k16-trajectory-v2-refine-iofix/best.pt",
+      "config": "configs/benchmarks/egopat3d_vitra_finetune_h6k16_trajectory_v2_refine.yaml",
+      "initial_noise_scale": 0.0,
+      "ode_steps": 16,
+      "recipe": "refine",
+      "validation_ade_m": 0.1406966565404391,
+      "validation_examples": 1735,
+      "validation_fde_m": 0.23032699270061183,
+      "validation_mean_ade_fde_m": 0.18551182462052546
+    },
+    {
+      "checkpoint": "/scratch/jun.se/EGO-HAND-WM/runs/egopat3d-vitra-h6k16-trajectory-v2-refine-iofix/best.pt",
+      "config": "configs/benchmarks/egopat3d_vitra_finetune_h6k16_trajectory_v2_refine.yaml",
+      "initial_noise_scale": 0.5,
+      "ode_steps": 16,
+      "recipe": "refine",
+      "validation_ade_m": 0.13759808757385844,
+      "validation_examples": 1735,
+      "validation_fde_m": 0.22197021644680576,
+      "validation_mean_ade_fde_m": 0.1797841520103321
+    },
+    {
+      "checkpoint": "/scratch/jun.se/EGO-HAND-WM/runs/egopat3d-vitra-h6k16-trajectory-v2-refine-iofix/best.pt",
+      "config": "configs/benchmarks/egopat3d_vitra_finetune_h6k16_trajectory_v2_refine.yaml",
+      "initial_noise_scale": 1.0,
+      "ode_steps": 16,
+      "recipe": "refine",
+      "validation_ade_m": 0.15478409631414725,
+      "validation_examples": 1735,
+      "validation_fde_m": 0.24308144076424046,
+      "validation_mean_ade_fde_m": 0.19893276853919384
+    }
+  ]
+}

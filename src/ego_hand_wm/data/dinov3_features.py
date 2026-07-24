@@ -2,13 +2,14 @@
 
 Only local repositories and local checkpoint files are accepted.  The extraction unit is an
 annotation tar shard: episodes are grouped by source video, requested physical frame IDs are
-decoded once per video within that shard, and pooled features are written to one aligned tar.
+decoded once per video within that shard, and spatial features are written to one aligned tar.
 """
 
 from __future__ import annotations
 
 import io
 import os
+import sys
 import tarfile
 import uuid
 from dataclasses import dataclass
@@ -42,12 +43,14 @@ IMAGENET_MEAN = (0.485, 0.456, 0.406)
 IMAGENET_STD = (0.229, 0.224, 0.225)
 
 
-class PooledFeatureEncoder(Protocol):
+class SpatialFeatureEncoder(Protocol):
     def encode(self, rgb_frames: np.ndarray) -> np.ndarray:
-        """Return finite ``[B,D]`` pooled features for uint8 ``[B,H,W,3]`` RGB frames."""
+        """Return finite ``[B,P,D]`` spatial features for uint8 RGB frames."""
 
 
-FrameReader = Callable[[Path, Sequence[int]], Iterator[tuple[int, np.ndarray]]]
+FrameReader = Callable[
+    [Path, Sequence[int], Sequence[float]], Iterator[tuple[int, np.ndarray]]
+]
 
 
 def utc_now() -> str:
@@ -74,13 +77,14 @@ def build_extractor_metadata(
     weights_path: str | Path,
     model_name: str,
     input_size: int,
+    spatial_grid_size: int,
 ) -> dict[str, Any]:
     repo = _require_local_directory(repo_path, "DINOv3 repository")
     weights = _require_local_file(weights_path, "DINOv3 weights")
-    if input_size <= 0:
-        raise ValueError("input_size must be positive")
+    if input_size <= 0 or spatial_grid_size <= 0:
+        raise ValueError("input_size and spatial_grid_size must be positive")
     return {
-        "backend": "torch_hub_local",
+        "backend": "dinov3_local_backbone",
         "model_name": str(model_name),
         "repo_path": str(repo),
         "repo_hubconf_sha256": sha256_file(repo / "hubconf.py"),
@@ -93,13 +97,293 @@ def build_extractor_metadata(
         "input_range": "uint8_0_255",
         "mean": list(IMAGENET_MEAN),
         "std": list(IMAGENET_STD),
-        "pooling": "mean_x_norm_patchtokens",
+        "pooling": "adaptive_average_spatial_grid",
+        "spatial_grid_size": int(spatial_grid_size),
+        "spatial_tokens": int(spatial_grid_size**2),
         "storage_dtype": "float16",
     }
 
 
-class LocalDinoV3PooledEncoder:
-    """Frozen local-only DINOv3 patch-token mean encoder."""
+def build_dinotxt_extractor_metadata(
+    *,
+    repo_path: str | Path,
+    weights_path: str | Path,
+    dinotxt_weights_path: str | Path,
+    bpe_path: str | Path,
+    model_name: str,
+    input_size: int,
+    spatial_grid_size: int,
+) -> dict[str, Any]:
+    """Describe the exact local DINO.txt visual/text representation contract."""
+    metadata = build_extractor_metadata(
+        repo_path=repo_path,
+        weights_path=weights_path,
+        model_name=model_name,
+        input_size=input_size,
+        spatial_grid_size=spatial_grid_size,
+    )
+    adapter = _require_local_file(dinotxt_weights_path, "DINO.txt adapter weights")
+    bpe = _require_local_file(bpe_path, "DINO.txt BPE vocabulary")
+    spatial_tokens = int(spatial_grid_size**2)
+    metadata.update(
+        {
+            "backend": "dinov3_local_dinotxt",
+            "dinotxt_weights_path": str(adapter),
+            "dinotxt_weights_size_bytes": adapter.stat().st_size,
+            "dinotxt_weights_sha256": sha256_file(adapter),
+            "bpe_path": str(bpe),
+            "bpe_sha256": sha256_file(bpe),
+            "vision_head": "official_dinotxt_two_transformer_blocks",
+            "pooling": "post_dinotxt_head_adaptive_average_spatial_grid",
+            "token_layout": "post_head_cls_then_row_major_spatial",
+            "class_tokens": 1,
+            "spatial_tokens": spatial_tokens,
+            "total_tokens": 1 + spatial_tokens,
+            "feature_dim": 1024,
+            "global_descriptor": "l2_normalize(concat(cls,mean(spatial)))",
+            "global_dim": 2048,
+            "text_descriptor": "official_dinotxt_l2_normalized_eot",
+            "text_dim": 2048,
+        }
+    )
+    return metadata
+
+
+def _load_local_dinov3_backbone(
+    *, repo_path: Path, weights_path: Path, model_name: str
+) -> torch.nn.Module:
+    sys.path.insert(0, str(repo_path))
+    try:
+        from dinov3.hub import backbones
+
+        constructor = getattr(backbones, str(model_name))
+        backbone = constructor(pretrained=False)
+    finally:
+        if sys.path[0] == str(repo_path):
+            sys.path.pop(0)
+    state = torch.load(weights_path, map_location="cpu", weights_only=True, mmap=True)
+    backbone.load_state_dict(state, strict=True)
+    return backbone
+
+
+class LocalDinoTxtVisualEncoder:
+    """Official frozen DINO.txt ViT-L vision head with compact spatial retention.
+
+    Each frame is stored as 17 tokens by default: the post-head class token followed by a
+    row-major 4x4 average pool of the post-head patch tokens.  The exact aligned global image
+    descriptor can therefore be reconstructed losslessly as ``concat(cls, patches.mean(0))``
+    relative to this pooling (equal-area 16x16 -> 4x4 pooling preserves the patch mean).
+    """
+
+    def __init__(
+        self,
+        *,
+        repo_path: str | Path,
+        weights_path: str | Path,
+        dinotxt_weights_path: str | Path,
+        model_name: str = "dinov3_vitl16",
+        input_size: int = 256,
+        spatial_grid_size: int = 4,
+        device: str = "auto",
+    ) -> None:
+        self.repo_path = _require_local_directory(repo_path, "DINOv3 repository")
+        self.weights_path = _require_local_file(weights_path, "DINOv3 weights")
+        self.dinotxt_weights_path = _require_local_file(
+            dinotxt_weights_path, "DINO.txt adapter weights"
+        )
+        if input_size <= 0 or spatial_grid_size <= 0:
+            raise ValueError("input_size and spatial_grid_size must be positive")
+        self.input_size = int(input_size)
+        self.spatial_grid_size = int(spatial_grid_size)
+        self.output_tokens = 1 + self.spatial_grid_size**2
+        self.feature_dim = 1024
+        if device == "auto":
+            device = "cuda" if torch.cuda.is_available() else "cpu"
+        self.device = torch.device(device)
+        if self.device.type == "cuda" and not torch.cuda.is_available():
+            raise RuntimeError("CUDA was requested for DINO.txt extraction but is unavailable")
+
+        backbone = _load_local_dinov3_backbone(
+            repo_path=self.repo_path,
+            weights_path=self.weights_path,
+            model_name=model_name,
+        )
+        sys.path.insert(0, str(self.repo_path))
+        try:
+            from dinov3.eval.text.vision_tower import VisionTower
+
+            self.model = VisionTower(
+                backbone=backbone,
+                freeze_backbone=True,
+                embed_dim=2048,
+                num_head_blocks=2,
+                head_blocks_block_drop_path=0.3,
+                use_class_token=True,
+                use_patch_tokens=True,
+                patch_token_layer=1,
+                patch_tokens_pooler_type="mean",
+                use_linear_projection=False,
+            )
+        finally:
+            if sys.path[0] == str(self.repo_path):
+                sys.path.pop(0)
+        adapter = torch.load(
+            self.dinotxt_weights_path,
+            map_location="cpu",
+            weights_only=True,
+            mmap=True,
+        )
+        head_state = {
+            key.removeprefix("visual_model.head."): value
+            for key, value in adapter.items()
+            if key.startswith("visual_model.head.")
+        }
+        self.model.head.load_state_dict(head_state, strict=True)
+        del adapter, head_state
+        self.model = self.model.to(self.device).eval()
+        for parameter in self.model.parameters():
+            parameter.requires_grad_(False)
+        self.mean = torch.tensor(IMAGENET_MEAN, device=self.device).view(1, 3, 1, 1)
+        self.std = torch.tensor(IMAGENET_STD, device=self.device).view(1, 3, 1, 1)
+
+    @torch.inference_mode()
+    def encode(self, rgb_frames: np.ndarray) -> np.ndarray:
+        frames = np.asarray(rgb_frames)
+        if frames.ndim != 4 or frames.shape[-1] != 3 or frames.dtype != np.uint8:
+            raise ValueError(f"Expected uint8 RGB [B,H,W,3], got {frames.shape} {frames.dtype}")
+        host_frames = (
+            frames
+            if frames.flags.c_contiguous and frames.flags.writeable
+            else frames.copy()
+        )
+        images = torch.from_numpy(host_frames).to(self.device)
+        images = images.permute(0, 3, 1, 2).float().div_(255.0)
+        images = functional.interpolate(
+            images,
+            size=(self.input_size, self.input_size),
+            mode="bilinear",
+            align_corners=False,
+            antialias=True,
+        )
+        images = (images - self.mean) / self.std
+        with torch.autocast(
+            device_type=self.device.type,
+            dtype=torch.bfloat16,
+            enabled=self.device.type == "cuda",
+        ):
+            class_token, patches, _ = self.model.get_class_and_patch_tokens(images)
+            patch_side = int(round(patches.shape[1] ** 0.5))
+            if patch_side * patch_side != patches.shape[1]:
+                raise FeatureShardError(
+                    f"DINO.txt patch count is not square: {patches.shape[1]}"
+                )
+            spatial = patches.reshape(
+                patches.shape[0], patch_side, patch_side, patches.shape[2]
+            ).permute(0, 3, 1, 2)
+            spatial = functional.adaptive_avg_pool2d(
+                spatial.float(), (self.spatial_grid_size, self.spatial_grid_size)
+            ).flatten(2).transpose(1, 2)
+            tokens = torch.cat((class_token.float().unsqueeze(1), spatial), dim=1)
+        result = tokens.cpu().numpy()
+        expected = (len(frames), self.output_tokens, self.feature_dim)
+        if result.shape != expected or not np.isfinite(result).all():
+            raise FeatureShardError(
+                f"DINO.txt returned invalid visual features: {result.shape}, expected {expected}"
+            )
+        return result
+
+
+class LocalDinoTxtTextEncoder:
+    """Load only the official DINO.txt text tower for one-time prompt caching."""
+
+    output_dim = 2048
+
+    def __init__(
+        self,
+        *,
+        repo_path: str | Path,
+        dinotxt_weights_path: str | Path,
+        bpe_path: str | Path,
+        device: str = "auto",
+    ) -> None:
+        self.repo_path = _require_local_directory(repo_path, "DINOv3 repository")
+        self.dinotxt_weights_path = _require_local_file(
+            dinotxt_weights_path, "DINO.txt adapter weights"
+        )
+        self.bpe_path = _require_local_file(bpe_path, "DINO.txt BPE vocabulary")
+        if device == "auto":
+            device = "cuda" if torch.cuda.is_available() else "cpu"
+        self.device = torch.device(device)
+        if self.device.type == "cuda" and not torch.cuda.is_available():
+            raise RuntimeError("CUDA was requested for DINO.txt text encoding but is unavailable")
+
+        sys.path.insert(0, str(self.repo_path))
+        try:
+            from dinov3.eval.text.text_tower import TextTower
+            from dinov3.eval.text.text_transformer import TextTransformer
+            from dinov3.eval.text.tokenizer import get_tokenizer
+
+            backbone = TextTransformer(
+                context_length=77,
+                vocab_size=49408,
+                dim=1280,
+                num_heads=20,
+                num_layers=24,
+                ffn_ratio=4,
+                is_causal=True,
+                ls_init_value=None,
+                dropout_prob=0.0,
+            )
+            self.model = TextTower(
+                backbone=backbone,
+                freeze_backbone=True,
+                embed_dim=2048,
+                num_head_blocks=0,
+                head_blocks_is_causal=False,
+                head_blocks_block_drop_prob=0.0,
+                tokens_pooler_type="argmax",
+                use_linear_projection=True,
+            )
+            self.tokenizer = get_tokenizer(str(self.bpe_path))
+        finally:
+            if sys.path[0] == str(self.repo_path):
+                sys.path.pop(0)
+        adapter = torch.load(
+            self.dinotxt_weights_path,
+            map_location="cpu",
+            weights_only=True,
+            mmap=True,
+        )
+        text_state = {
+            key.removeprefix("text_model."): value
+            for key, value in adapter.items()
+            if key.startswith("text_model.")
+        }
+        self.model.load_state_dict(text_state, strict=True)
+        del adapter, text_state
+        self.model = self.model.to(self.device).eval()
+        for parameter in self.model.parameters():
+            parameter.requires_grad_(False)
+
+    @torch.inference_mode()
+    def encode(self, texts: Sequence[str]) -> np.ndarray:
+        if not texts:
+            return np.empty((0, self.output_dim), dtype=np.float32)
+        token_indices = self.tokenizer.tokenize([str(text) for text in texts]).to(self.device)
+        with torch.autocast(
+            device_type=self.device.type,
+            dtype=torch.bfloat16,
+            enabled=self.device.type == "cuda",
+        ):
+            features = functional.normalize(self.model(token_indices).float(), dim=-1)
+        result = features.cpu().numpy()
+        if result.shape != (len(texts), self.output_dim) or not np.isfinite(result).all():
+            raise FeatureShardError(f"DINO.txt returned invalid text features: {result.shape}")
+        return result
+
+
+class LocalDinoV3SpatialEncoder:
+    """Frozen local-only DINOv3 encoder retaining a compact spatial token grid."""
 
     def __init__(
         self,
@@ -108,26 +392,35 @@ class LocalDinoV3PooledEncoder:
         weights_path: str | Path,
         model_name: str = "dinov3_vitl16",
         input_size: int = 256,
+        spatial_grid_size: int = 4,
         device: str = "auto",
     ) -> None:
         self.repo_path = _require_local_directory(repo_path, "DINOv3 repository")
         self.weights_path = _require_local_file(weights_path, "DINOv3 weights")
-        if input_size <= 0:
-            raise ValueError("input_size must be positive")
+        if input_size <= 0 or spatial_grid_size <= 0:
+            raise ValueError("input_size and spatial_grid_size must be positive")
         self.input_size = int(input_size)
+        self.spatial_grid_size = int(spatial_grid_size)
         if device == "auto":
             device = "cuda" if torch.cuda.is_available() else "cpu"
         self.device = torch.device(device)
         if self.device.type == "cuda" and not torch.cuda.is_available():
             raise RuntimeError("CUDA was requested for DINO extraction but is unavailable")
 
-        # Passing a verified local checkpoint and source='local' prevents torch.hub downloads.
-        self.model = torch.hub.load(
-            str(self.repo_path),
-            str(model_name),
-            source="local",
-            weights=str(self.weights_path),
-        ).to(self.device)
+        # Import only the backbone module.  DINOv3's broad hubconf imports optional evaluation
+        # dependencies and its file:// weights path copies multi-GB checkpoints into $HOME.
+        sys.path.insert(0, str(self.repo_path))
+        try:
+            from dinov3.hub import backbones
+
+            constructor = getattr(backbones, str(model_name))
+            self.model = constructor(pretrained=False)
+        finally:
+            if sys.path[0] == str(self.repo_path):
+                sys.path.pop(0)
+        state = torch.load(self.weights_path, map_location="cpu", weights_only=True)
+        self.model.load_state_dict(state, strict=True)
+        self.model = self.model.to(self.device)
         self.model.eval()
         for parameter in self.model.parameters():
             parameter.requires_grad_(False)
@@ -159,10 +452,22 @@ class LocalDinoV3PooledEncoder:
                 raise FeatureShardError(
                     "DINOv3 forward_features did not return x_norm_patchtokens"
                 )
-            pooled = output["x_norm_patchtokens"].mean(dim=1)
-        result = pooled.float().cpu().numpy()
-        if result.ndim != 2 or not np.isfinite(result).all():
-            raise FeatureShardError("DINOv3 returned invalid pooled features")
+            patches = output["x_norm_patchtokens"]
+            patch_side = int(round(patches.shape[1] ** 0.5))
+            if patch_side * patch_side != patches.shape[1]:
+                raise FeatureShardError(
+                    f"DINOv3 patch count is not square: {patches.shape[1]}"
+                )
+            spatial = patches.reshape(
+                patches.shape[0], patch_side, patch_side, patches.shape[2]
+            ).permute(0, 3, 1, 2)
+            spatial = functional.adaptive_avg_pool2d(
+                spatial.float(), (self.spatial_grid_size, self.spatial_grid_size)
+            )
+            spatial = spatial.flatten(2).transpose(1, 2)
+        result = spatial.cpu().numpy()
+        if result.ndim != 3 or not np.isfinite(result).all():
+            raise FeatureShardError("DINOv3 returned invalid spatial features")
         return result
 
 
@@ -204,30 +509,105 @@ class VideoResolver:
             ) from error
 
 
-def decode_video_frames(path: Path, frame_ids: Sequence[int]) -> Iterator[tuple[int, np.ndarray]]:
-    """Decode requested presentation-order frame IDs exactly once in ascending order."""
+def decode_video_frames(
+    path: Path,
+    frame_ids: Sequence[int],
+    frame_times_seconds: Sequence[float],
+    *,
+    seek_margin_seconds: float = 2.0,
+    reseek_gap_seconds: float = 2.0,
+    output_size: tuple[int, int] | None = None,
+) -> Iterator[tuple[int, np.ndarray]]:
+    """Seek by validated PTS and decode only short spans around requested frames.
+
+    Inter-frame codecs require decoding from a preceding keyframe.  Cached presentation times
+    let us seek near each sparse run while still matching every returned RGB frame exactly.
+    """
     import av
 
     requested = np.asarray(frame_ids, dtype=np.int64)
+    requested_times = np.asarray(frame_times_seconds, dtype=np.float64)
     if requested.ndim != 1 or len(requested) == 0:
         raise ValueError("frame_ids must be a non-empty one-dimensional sequence")
     if np.any(requested < 0) or np.any(np.diff(requested) <= 0):
         raise ValueError("frame_ids must be non-negative and strictly increasing")
+    if (
+        requested_times.shape != requested.shape
+        or not np.isfinite(requested_times).all()
+        or np.any(np.diff(requested_times) <= 0)
+    ):
+        raise ValueError("frame_times_seconds must be finite, aligned, and increasing")
+    if seek_margin_seconds <= 0 or reseek_gap_seconds <= 0:
+        raise ValueError("seek margins must be positive")
+    if output_size is not None and (output_size[0] <= 0 or output_size[1] <= 0):
+        raise ValueError("output_size must contain positive (height, width)")
+
     cursor = 0
     with av.open(str(path)) as container:
         stream = container.streams.video[0]
-        for decoded_index, frame in enumerate(container.decode(stream)):
-            target = int(requested[cursor])
-            if decoded_index < target:
-                continue
-            if decoded_index != target:
+        requested_threads = int(os.environ.get("EGO_HAND_WM_DECODE_THREADS", "0"))
+        if requested_threads > 0:
+            stream.thread_type = "AUTO"
+            stream.codec_context.thread_count = requested_threads
+        if stream.time_base is None:
+            raise FeatureShardError(f"Video stream has no time base: {path}")
+        stream_tick = float(stream.time_base)
+        while cursor < len(requested):
+            seek_seconds = max(float(requested_times[cursor]) - seek_margin_seconds, 0.0)
+            seek_pts = max(int(seek_seconds / stream_tick), 0)
+            container.seek(seek_pts, stream=stream, backward=True, any_frame=False)
+            made_progress = False
+            # Some upstream videos contain isolated corrupt packets even though their MP4
+            # container and timestamp table are intact (EPIC P30_08 is one example).  PyAV's
+            # high-level decoder raises for those packets.  Continue to the next decodable
+            # packet, while retaining the strict PTS comparison below so a corrupt *requested*
+            # frame still fails loudly instead of silently shifting the frame index.
+            stop_span = False
+            for packet in container.demux(stream):
+                try:
+                    decoded_frames = packet.decode()
+                except (av.error.InvalidDataError, av.error.EOFError):
+                    # Packet-level decoding is important here: unlike the high-level
+                    # container.decode() iterator, skipping this packet advances demux state and
+                    # cannot spin forever on the same corrupt packet.
+                    continue
+                for frame in decoded_frames:
+                    if frame.pts is None:
+                        raise FeatureShardError(f"Decoded frame lacks PTS in {path}")
+                    time_base = frame.time_base or stream.time_base
+                    current_time = float(frame.pts * time_base)
+                    target_time = float(requested_times[cursor])
+                    local_step = (
+                        float(requested_times[cursor + 1] - target_time)
+                        if cursor + 1 < len(requested)
+                        else 1.0 / float(stream.average_rate or 30.0)
+                    )
+                    tolerance = max(2.0 * stream_tick, min(local_step * 0.2, 1e-3))
+                    if current_time < target_time - tolerance:
+                        continue
+                    if current_time > target_time + tolerance:
+                        raise FeatureShardError(
+                            f"PTS seek skipped frame {int(requested[cursor])} in {path}: "
+                            f"target={target_time:.9f}, decoded={current_time:.9f}"
+                        )
+                    if output_size is not None:
+                        height, width = output_size
+                        frame = frame.reformat(width=width, height=height, format="rgb24")
+                    yield int(requested[cursor]), frame.to_ndarray(format="rgb24")
+                    made_progress = True
+                    cursor += 1
+                    if cursor == len(requested):
+                        stop_span = True
+                        break
+                    if float(requested_times[cursor]) - current_time > reseek_gap_seconds:
+                        stop_span = True
+                        break
+                if stop_span:
+                    break
+            if not made_progress:
                 raise FeatureShardError(
-                    f"Decoder skipped requested frame {target} in {path}; reached {decoded_index}"
+                    f"Video {path} ended before requested frame {int(requested[cursor])}"
                 )
-            yield target, frame.to_ndarray(format="rgb24")
-            cursor += 1
-            if cursor == len(requested):
-                break
     if cursor != len(requested):
         raise FeatureShardError(
             f"Video {path} ended before requested frame {int(requested[cursor])}"
@@ -315,7 +695,8 @@ def _encode_requested_frames(
     video_path: Path,
     frame_ids: np.ndarray,
     *,
-    encoder: PooledFeatureEncoder,
+    frame_times_seconds: np.ndarray,
+    encoder: SpatialFeatureEncoder,
     frame_reader: FrameReader,
     batch_size: int,
 ) -> dict[int, np.ndarray]:
@@ -324,29 +705,37 @@ def _encode_requested_frames(
     result: dict[int, np.ndarray] = {}
     batch_ids: list[int] = []
     batch_frames: list[np.ndarray] = []
-    feature_dim: int | None = None
+    feature_shape: tuple[int, int] | None = None
 
     def flush() -> None:
-        nonlocal feature_dim
+        nonlocal feature_shape
         if not batch_ids:
             return
         encoded = np.asarray(encoder.encode(np.stack(batch_frames, axis=0)))
-        if encoded.ndim != 2 or encoded.shape[0] != len(batch_ids) or encoded.shape[1] <= 0:
+        if (
+            encoded.ndim != 3
+            or encoded.shape[0] != len(batch_ids)
+            or encoded.shape[1] <= 0
+            or encoded.shape[2] <= 0
+        ):
             raise FeatureShardError(
-                f"Encoder must return [B,D]; got {encoded.shape} for B={len(batch_ids)}"
+                f"Encoder must return [B,P,D]; got {encoded.shape} for B={len(batch_ids)}"
             )
         if not np.issubdtype(encoded.dtype, np.floating) or not np.isfinite(encoded).all():
             raise FeatureShardError("Encoder returned non-finite or non-floating features")
-        if feature_dim is None:
-            feature_dim = int(encoded.shape[1])
-        elif feature_dim != encoded.shape[1]:
-            raise FeatureShardError("Encoder feature dimension changed between batches")
+        current_shape = (int(encoded.shape[1]), int(encoded.shape[2]))
+        if feature_shape is None:
+            feature_shape = current_shape
+        elif feature_shape != current_shape:
+            raise FeatureShardError("Encoder feature grid changed between batches")
         for frame_id, feature in zip(batch_ids, encoded, strict=True):
             result[frame_id] = np.asarray(feature, dtype=np.float16)
         batch_ids.clear()
         batch_frames.clear()
 
-    for frame_id, frame in frame_reader(video_path, frame_ids.tolist()):
+    for frame_id, frame in frame_reader(
+        video_path, frame_ids.tolist(), frame_times_seconds.tolist()
+    ):
         expected = int(frame_ids[len(result) + len(batch_ids)])
         if frame_id != expected:
             raise FeatureShardError(
@@ -410,7 +799,7 @@ def extract_feature_shard(
     output_root: str | Path,
     pts_root: str | Path,
     video_resolver: VideoResolver,
-    encoder: PooledFeatureEncoder,
+    encoder: SpatialFeatureEncoder,
     extractor_metadata: dict[str, Any],
     frame_reader: FrameReader = decode_video_frames,
     batch_size: int = 32,
@@ -451,35 +840,48 @@ def extract_feature_shard(
     }
     try:
         work = _load_annotation_work(annotation_path, pts_path)
-        groups: dict[tuple[str, str], set[int]] = {}
+        groups: dict[tuple[str, str], dict[int, float]] = {}
         for episode in work:
-            groups.setdefault((episode.dataset_name, episode.video_name), set()).update(
-                int(frame_id) for frame_id in episode.frame_ids
-            )
+            group = groups.setdefault((episode.dataset_name, episode.video_name), {})
+            for frame_id, frame_time in zip(
+                episode.frame_ids, episode.frame_times_seconds, strict=True
+            ):
+                frame_id = int(frame_id)
+                previous = group.setdefault(frame_id, float(frame_time))
+                if not np.isclose(previous, frame_time, rtol=0.0, atol=1e-9):
+                    raise FeatureShardError(
+                        f"Conflicting PTS for {episode.dataset_name}/{episode.video_name} "
+                        f"frame {frame_id}"
+                    )
         feature_maps: dict[tuple[str, str], dict[int, np.ndarray]] = {}
-        for (dataset_name, video_name), ids in groups.items():
-            requested = np.asarray(sorted(ids), dtype=np.int64)
+        for (dataset_name, video_name), id_to_time in groups.items():
+            requested = np.asarray(sorted(id_to_time), dtype=np.int64)
+            requested_times = np.asarray(
+                [id_to_time[int(frame_id)] for frame_id in requested], dtype=np.float64
+            )
             video_path = video_resolver.resolve(dataset_name, video_name)
             feature_maps[(dataset_name, video_name)] = _encode_requested_frames(
                 video_path,
                 requested,
+                frame_times_seconds=requested_times,
                 encoder=encoder,
                 frame_reader=frame_reader,
                 batch_size=batch_size,
             )
 
-        logical_digest = torch.sha256 if False else None  # keep torch out of tar hashing
         import hashlib
 
         digest = hashlib.sha256()
         feature_dim: int | None = None
+        spatial_tokens: int | None = None
         with tarfile.open(temporary, "w") as writer:
             for episode in work:
                 mapping = feature_maps[(episode.dataset_name, episode.video_name)]
                 pooled = np.stack([mapping[int(frame_id)] for frame_id in episode.frame_ids])
-                if feature_dim is None:
-                    feature_dim = int(pooled.shape[1])
-                elif feature_dim != pooled.shape[1]:
+                if spatial_tokens is None:
+                    spatial_tokens = int(pooled.shape[1])
+                    feature_dim = int(pooled.shape[2])
+                elif spatial_tokens != pooled.shape[1] or feature_dim != pooled.shape[2]:
                     raise FeatureShardError("Feature dimension changed across source videos")
                 record = EpisodeFeatureRecord(
                     annotation_member=episode.member_name,
@@ -501,7 +903,7 @@ def extract_feature_shard(
                 writer.addfile(tar_info, io.BytesIO(payload))
                 digest.update(member_name.encode("utf-8"))
                 digest.update(sha256_bytes(payload).encode("ascii"))
-        if feature_dim is None:
+        if feature_dim is None or spatial_tokens is None:
             raise FeatureShardError("No feature records were written")
         os.replace(temporary, feature_path)
         manifest = {
@@ -513,6 +915,7 @@ def extract_feature_shard(
             "source_video_count": len(groups),
             "unique_decoded_frames": sum(len(ids) for ids in groups.values()),
             "feature_dim": feature_dim,
+            "spatial_tokens": spatial_tokens,
             "storage_dtype": "float16",
             "feature_size_bytes": feature_path.stat().st_size,
             "logical_content_sha256": digest.hexdigest(),

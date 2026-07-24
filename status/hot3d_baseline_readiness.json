@@ -1,0 +1,78 @@
+{
+  "benchmark": "controlled_hot3d_clips_aria_h6_k16",
+  "official_hidden_test": false,
+  "common_contract": {
+    "train_examples": 19062,
+    "validation_examples": 3960,
+    "test_examples": 4266,
+    "history_steps": 6,
+    "future_steps": 16,
+    "fps": 30,
+    "history_span_seconds": 0.16666666666666666,
+    "prediction_horizon_seconds": 0.5333333333333333,
+    "coordinate_frame": "last_observed_aria_rgb_camera",
+    "target": "metric_tracked_wrist_xyz",
+    "normalization": "train_split_per_axis_xyz_standardization",
+    "output_parameterization": "absolute_xyz",
+    "residual_to_last_observation": false,
+    "formal_samples_per_example": 1,
+    "metrics": [
+      "ade_3d_m",
+      "fde_3d_m"
+    ]
+  },
+  "geometry_equivalence": {
+    "report": "status/hot3d_baseline_compatibility.json",
+    "mmtwin_max_abs_error_m": 0.0,
+    "handsonvlm_max_abs_error_m": 0.0,
+    "usst_max_abs_error_m": 2.9802322387695312e-08
+  },
+  "baselines": {
+    "usst": {
+      "observations": [
+        "six_rgb_frames",
+        "six_wrist_xyz_points"
+      ],
+      "future_label_leakage_test_max_abs_change": 0.0,
+      "validation_selection": "complete_validation_ade_each_epoch",
+      "real_cpu_forward_loss_backward": true,
+      "production_hot3d_gpu_smoke": false
+    },
+    "mmtwin": {
+      "observations": [
+        "six_rgb_frames",
+        "six_wrist_xyz_points",
+        "six_camera_poses"
+      ],
+      "future_camera_and_wrist": "diffusion_targets_only_and_zeroed_before_inference",
+      "future_label_leakage_test_max_abs_change": 0.0,
+      "validation_selection": "complete_validation_denoising_loss",
+      "real_loader_tiny_model_forward_loss_backward_sample": true,
+      "production_hot3d_gpu_smoke": false
+    },
+    "handsonvlm": {
+      "observations": [
+        "six_rgb_frames",
+        "six_wrist_xyz_points",
+        "fixed_nonsemantic_prompt"
+      ],
+      "future_geometry_in_formal_inference_call": false,
+      "validation_selection": "complete_validation_single_prior_sample_ade_each_epoch",
+      "real_loader_tokenizer_processor_and_head_smoke": true,
+      "production_hot3d_gpu_smoke": false
+    }
+  },
+  "verification": {
+    "usst_tests_passed": 10,
+    "mmtwin_tests_passed": 9,
+    "handsonvlm_tests_passed": 9,
+    "launcher_shell_syntax": "pass",
+    "output_directories_clean": true,
+    "jobs_submitted_by_this_audit": 0
+  },
+  "remaining_before_full_training": [
+    "Run one production-GPU smoke for USST.",
+    "Run one production-GPU smoke for MMTwin with DINOv3.",
+    "Run one production-GPU smoke for HandsOnVLM with the released 7B checkpoint."
+  ]
+}

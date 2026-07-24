@@ -1,0 +1,35 @@
+{
+  "complete": true,
+  "exclusion_reasons": {},
+  "logical_requested_frames": 24,
+  "logical_source_unique_frames": {
+    "ego4d_cooking_and_cleaning": 24
+  },
+  "partitions": 1,
+  "physical_source_unique_frames": {
+    "ego4d_cooking_and_cleaning": 24
+  },
+  "physical_source_videos": {
+    "ego4d_cooking_and_cleaning": 1
+  },
+  "pts_aliases": {},
+  "source_episodes": {
+    "ego4d_cooking_and_cleaning": 1
+  },
+  "staged_rgb": {
+    "bytes_per_frame": 196608,
+    "channels": 3,
+    "dtype": "uint8",
+    "height": 256,
+    "total_bytes": 4718592,
+    "total_gib": 0.00439453125,
+    "total_tib": 4.291534423828125e-06,
+    "width": 256
+  },
+  "stats": {
+    "episodes_kept": 1,
+    "episodes_total": 1,
+    "frame_occurrences_kept": 24
+  },
+  "unique_requested_frames": 24
+}

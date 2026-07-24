@@ -1,0 +1,22 @@
+{
+  "annotation_shards": 1,
+  "complete": true,
+  "contract": "ego_hand_wm.vitra_spatial_visual_features",
+  "episodes": 1,
+  "extractor_id": "3cdb55739b9ae46517c1fd7c4dbc039b3329f7051d9397a56d5649cd04299140",
+  "feature_dim": 1024,
+  "records": [
+    {
+      "annotation_shard": "vitra-smoke.tar",
+      "episodes": 1,
+      "feature_shard": "shards/vitra-smoke.tar",
+      "manifest": "_manifests/vitra-smoke.tar.json"
+    }
+  ],
+  "role_capabilities": [
+    "context",
+    "future_target"
+  ],
+  "schema_version": 2,
+  "spatial_tokens": 16
+}

@@ -1,0 +1,9 @@
+{
+  "checkpoint": "/scratch/jun.se/EGO-HAND-WM/runs/egopat3d-vitra-h6k16-v1/best.pt",
+  "samples": 4686,
+  "split": "test_novel",
+  "test/test_novel/ade_m": 0.159030343302758,
+  "test/test_novel/camera_translation_m": 0.007963428092933747,
+  "test/test_novel/examples": 4686.0,
+  "test/test_novel/fde_m": 0.2704278772199591
+}

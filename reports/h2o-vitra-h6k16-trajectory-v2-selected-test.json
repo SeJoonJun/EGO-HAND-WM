@@ -1,0 +1,166 @@
+{
+  "dataset": "h2o",
+  "protocol": {
+    "fps": 30,
+    "future_steps": 16,
+    "history_steps": 6,
+    "persistence_residual": false,
+    "prediction_horizon_seconds": 0.5333333333333333,
+    "samples_per_context": 1,
+    "selection_data": "complete validation split only",
+    "test_evaluations_per_selected_model": 1
+  },
+  "selected": {
+    "checkpoint": "/scratch/jun.se/EGO-HAND-WM/runs/h2o-vitra-h6k16-trajectory-v2-refine/best.pt",
+    "config": "configs/benchmarks/h2o_vitra_finetune_h6k16_trajectory_v2_refine.yaml",
+    "initial_noise_scale": 0.0,
+    "ode_steps": 8,
+    "recipe": "refine",
+    "validation_ade_m": 0.019328383436465722,
+    "validation_examples": 1830,
+    "validation_fde_m": 0.03593745701265638,
+    "validation_mean_ade_fde_m": 0.027632920224561052
+  },
+  "test": {
+    "test": {
+      "ade_m": 0.01917295375133255,
+      "examples": 3832,
+      "fde_m": 0.03477674056092019,
+      "mean_ade_fde_m": 0.026974847156126372
+    }
+  },
+  "validation_candidates": [
+    {
+      "checkpoint": "/scratch/jun.se/EGO-HAND-WM/runs/h2o-vitra-h6k16-trajectory-v2/best.pt",
+      "config": "configs/benchmarks/h2o_vitra_finetune_h6k16_trajectory_v2.yaml",
+      "initial_noise_scale": 0.0,
+      "ode_steps": 8,
+      "recipe": "fresh",
+      "validation_ade_m": 0.020436460513389494,
+      "validation_examples": 1830,
+      "validation_fde_m": 0.03687598985458261,
+      "validation_mean_ade_fde_m": 0.028656225183986053
+    },
+    {
+      "checkpoint": "/scratch/jun.se/EGO-HAND-WM/runs/h2o-vitra-h6k16-trajectory-v2/best.pt",
+      "config": "configs/benchmarks/h2o_vitra_finetune_h6k16_trajectory_v2.yaml",
+      "initial_noise_scale": 0.5,
+      "ode_steps": 8,
+      "recipe": "fresh",
+      "validation_ade_m": 0.021081483824111742,
+      "validation_examples": 1830,
+      "validation_fde_m": 0.03753119217135811,
+      "validation_mean_ade_fde_m": 0.029306337997734928
+    },
+    {
+      "checkpoint": "/scratch/jun.se/EGO-HAND-WM/runs/h2o-vitra-h6k16-trajectory-v2/best.pt",
+      "config": "configs/benchmarks/h2o_vitra_finetune_h6k16_trajectory_v2.yaml",
+      "initial_noise_scale": 1.0,
+      "ode_steps": 8,
+      "recipe": "fresh",
+      "validation_ade_m": 0.022828162439700313,
+      "validation_examples": 1830,
+      "validation_fde_m": 0.0400801475620396,
+      "validation_mean_ade_fde_m": 0.031454155000869954
+    },
+    {
+      "checkpoint": "/scratch/jun.se/EGO-HAND-WM/runs/h2o-vitra-h6k16-trajectory-v2/best.pt",
+      "config": "configs/benchmarks/h2o_vitra_finetune_h6k16_trajectory_v2.yaml",
+      "initial_noise_scale": 0.0,
+      "ode_steps": 16,
+      "recipe": "fresh",
+      "validation_ade_m": 0.02268889364059248,
+      "validation_examples": 1830,
+      "validation_fde_m": 0.03831291863188412,
+      "validation_mean_ade_fde_m": 0.0305009061362383
+    },
+    {
+      "checkpoint": "/scratch/jun.se/EGO-HAND-WM/runs/h2o-vitra-h6k16-trajectory-v2/best.pt",
+      "config": "configs/benchmarks/h2o_vitra_finetune_h6k16_trajectory_v2.yaml",
+      "initial_noise_scale": 0.5,
+      "ode_steps": 16,
+      "recipe": "fresh",
+      "validation_ade_m": 0.02536730821142794,
+      "validation_examples": 1830,
+      "validation_fde_m": 0.04118358811403019,
+      "validation_mean_ade_fde_m": 0.033275448162729065
+    },
+    {
+      "checkpoint": "/scratch/jun.se/EGO-HAND-WM/runs/h2o-vitra-h6k16-trajectory-v2/best.pt",
+      "config": "configs/benchmarks/h2o_vitra_finetune_h6k16_trajectory_v2.yaml",
+      "initial_noise_scale": 1.0,
+      "ode_steps": 16,
+      "recipe": "fresh",
+      "validation_ade_m": 0.035709723803753306,
+      "validation_examples": 1830,
+      "validation_fde_m": 0.05230295621265805,
+      "validation_mean_ade_fde_m": 0.04400634000820568
+    },
+    {
+      "checkpoint": "/scratch/jun.se/EGO-HAND-WM/runs/h2o-vitra-h6k16-trajectory-v2-refine/best.pt",
+      "config": "configs/benchmarks/h2o_vitra_finetune_h6k16_trajectory_v2_refine.yaml",
+      "initial_noise_scale": 0.0,
+      "ode_steps": 8,
+      "recipe": "refine",
+      "validation_ade_m": 0.019328383436465722,
+      "validation_examples": 1830,
+      "validation_fde_m": 0.03593745701265638,
+      "validation_mean_ade_fde_m": 0.027632920224561052
+    },
+    {
+      "checkpoint": "/scratch/jun.se/EGO-HAND-WM/runs/h2o-vitra-h6k16-trajectory-v2-refine/best.pt",
+      "config": "configs/benchmarks/h2o_vitra_finetune_h6k16_trajectory_v2_refine.yaml",
+      "initial_noise_scale": 0.5,
+      "ode_steps": 8,
+      "recipe": "refine",
+      "validation_ade_m": 0.01971371572753775,
+      "validation_examples": 1830,
+      "validation_fde_m": 0.03642912361735244,
+      "validation_mean_ade_fde_m": 0.028071419672445093
+    },
+    {
+      "checkpoint": "/scratch/jun.se/EGO-HAND-WM/runs/h2o-vitra-h6k16-trajectory-v2-refine/best.pt",
+      "config": "configs/benchmarks/h2o_vitra_finetune_h6k16_trajectory_v2_refine.yaml",
+      "initial_noise_scale": 1.0,
+      "ode_steps": 8,
+      "recipe": "refine",
+      "validation_ade_m": 0.021519933390593365,
+      "validation_examples": 1830,
+      "validation_fde_m": 0.039929915631070345,
+      "validation_mean_ade_fde_m": 0.030724924510831857
+    },
+    {
+      "checkpoint": "/scratch/jun.se/EGO-HAND-WM/runs/h2o-vitra-h6k16-trajectory-v2-refine/best.pt",
+      "config": "configs/benchmarks/h2o_vitra_finetune_h6k16_trajectory_v2_refine.yaml",
+      "initial_noise_scale": 0.0,
+      "ode_steps": 16,
+      "recipe": "refine",
+      "validation_ade_m": 0.019964788906157684,
+      "validation_examples": 1830,
+      "validation_fde_m": 0.036342914722786064,
+      "validation_mean_ade_fde_m": 0.028153851814471872
+    },
+    {
+      "checkpoint": "/scratch/jun.se/EGO-HAND-WM/runs/h2o-vitra-h6k16-trajectory-v2-refine/best.pt",
+      "config": "configs/benchmarks/h2o_vitra_finetune_h6k16_trajectory_v2_refine.yaml",
+      "initial_noise_scale": 0.5,
+      "ode_steps": 16,
+      "recipe": "refine",
+      "validation_ade_m": 0.020826393880480912,
+      "validation_examples": 1830,
+      "validation_fde_m": 0.037529752591702464,
+      "validation_mean_ade_fde_m": 0.029178073236091687
+    },
+    {
+      "checkpoint": "/scratch/jun.se/EGO-HAND-WM/runs/h2o-vitra-h6k16-trajectory-v2-refine/best.pt",
+      "config": "configs/benchmarks/h2o_vitra_finetune_h6k16_trajectory_v2_refine.yaml",
+      "initial_noise_scale": 1.0,
+      "ode_steps": 16,
+      "recipe": "refine",
+      "validation_ade_m": 0.026695305786291455,
+      "validation_examples": 1830,
+      "validation_fde_m": 0.045736447961293565,
+      "validation_mean_ade_fde_m": 0.03621587687379251
+    }
+  ]
+}
